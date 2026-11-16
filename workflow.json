@@ -1,0 +1,2246 @@
+{
+  "name": "HubSpot NPS Detractor Slack Huddle Provisioner (dhRobin Systems)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## n8n-hubspot-nps-detractor-slack-huddle-provisioner\n**dhRobin Systems** · NPS submission (HubSpot workflow webhook, 15-min poll of feedback submissions, or fixture) → contact + company → filter internal / test / duplicate / stale / non-NPS → category (detractor ≤ 6) × segment (Enterprise / Growth / SMB) → **emergency** / high / standard → per-company cooldown → HubSpot retention task + emergency ticket + `retention_status = At Risk`, `last_nps_score` → Slack emergency alert with huddle instructions + links → audit.\n\n**Safe by default.** With no environment variables set:\n- `SANDBOX_MODE=true`: synthetic submissions. **Zero HubSpot or Slack calls.**\n- `DRY_RUN=true`, `SEND_SLACK_ALERTS=false`, `WRITE_TO_HUBSPOT=false`.",
+        "height": 360,
+        "width": 720,
+        "color": 5
+      },
+      "id": "0e88b0e6-8770-5c11-8d45-17290b96a4bf",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Response tiers\n- **emergency**: Enterprise detractor → @here huddle alert, HIGH task (due 4h), emergency ticket\n- **high**: Growth detractor → alert + HIGH task (due 24h)\n- **standard**: SMB detractor → follow-up task · passive / promoter → score stamped only\nDetractor 0–6 · passive 7–8 · promoter 9–10. One response per company per `COOLDOWN_HOURS`.",
+        "height": 240,
+        "width": 460,
+        "color": 6
+      },
+      "id": "6dfa91c2-70c1-5aed-af54-917a1caff0b6",
+      "name": "Tier Notice",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Pinned synthetic payloads\nPinned: webhook, feedback search, submission / association / contact / company reads, task + ticket creates, company update, Slack (3 messages), run summary.\nPins apply to **manual executions only**. Unpin a node before a manual live test.",
+        "height": 200,
+        "width": 420,
+        "color": 3
+      },
+      "id": "cd1f813e-7279-52d3-afb2-4800296ee6f4",
+      "name": "Pinned Data Notice",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hubspot/nps-submission",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "59969515-12a3-5726-aa1a-00b4533a4022",
+      "name": "NPS Submission Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        40
+      ],
+      "webhookId": "d203bad8-cff0-55b9-a471-31b41c9cafc4",
+      "notes": "HubSpot workflow 'Send a webhook' with the feedback submission ID (or contactId + score).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "d99406da-2327-5ec6-8ec4-ff9d27f6fd46",
+      "name": "NPS Polling Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -600,
+        220
+      ],
+      "notes": "Every 15 minutes: NPS submissions created within POLL_LOOKBACK_MINUTES.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "e95fa4f0-eb68-5572-adb7-2308226a16c2",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3556bde2-6e8d-5222-891f-adf7a4f8539a",
+              "name": "config.sandboxMode",
+              "value": "={{ String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "a27e93dc-c83b-5f8e-9052-a058a1a685e6",
+              "name": "config.dryRun",
+              "value": "={{ String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "9d9ea105-9fce-505c-8499-d9ee5609c1d8",
+              "name": "config.sendSlackAlerts",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && String($env.SEND_SLACK_ALERTS ?? 'false').trim().toLowerCase() === 'true' && Boolean(String($env.SLACK_CS_EMERGENCY_WEBHOOK_URL ?? '').trim()) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "244c6740-763b-5812-b2d2-50fd0e9bb678",
+              "name": "config.writeToHubspot",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && String($env.WRITE_TO_HUBSPOT ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "03535159-b33a-59b6-a612-776bb4cdcf57",
+              "name": "config.webhookEnabled",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && Boolean(String($env.ALERT_WEBHOOK_URL ?? '').trim()) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "e89cd91c-83ba-5c0c-bab7-38144729665a",
+              "name": "config.notifyOnEveryRun",
+              "value": "={{ String($env.NOTIFY_ON_EVERY_RUN ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "07f1f2b9-863a-501c-9920-c65493a197c9",
+              "name": "config.createTasks",
+              "value": "={{ String($env.CREATE_RETENTION_TASKS ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "b6ba1463-3036-50dc-bd10-1b558c6fc029",
+              "name": "config.createTickets",
+              "value": "={{ String($env.CREATE_EMERGENCY_TICKETS ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "201560b1-45f6-53d5-bd25-df89a9a8e534",
+              "name": "config.updateCompanyProperties",
+              "value": "={{ String($env.UPDATE_COMPANY_PROPERTIES ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "5516a450-0acd-5601-b10a-a4fc776a60f3",
+              "name": "config.detractorMax",
+              "value": "={{ Math.min(9, Math.max(0, Number.isFinite(parseFloat($env.DETRACTOR_MAX_SCORE)) ? Math.round(parseFloat($env.DETRACTOR_MAX_SCORE)) : 6)) }}",
+              "type": "number"
+            },
+            {
+              "id": "15642943-b5ca-5cce-ac43-71bf7c24c319",
+              "name": "config.passiveMax",
+              "value": "={{ Math.min(9, Math.max(1, Number.isFinite(parseFloat($env.PASSIVE_MAX_SCORE)) ? Math.round(parseFloat($env.PASSIVE_MAX_SCORE)) : 8)) }}",
+              "type": "number"
+            },
+            {
+              "id": "ce2b6a95-8c5d-5ac8-af68-f14e0929a560",
+              "name": "config.npsSurveyTypes",
+              "value": "={{ String($env.NPS_SURVEY_TYPES ?? 'NPS').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "d7603db7-7f8f-541b-ab8b-cdc19ed06dfc",
+              "name": "config.npsSurveyTypesRaw",
+              "value": "={{ String($env.NPS_SURVEY_TYPES ?? 'NPS').split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "ccf72894-aa9c-5ea2-9eea-526047d89341",
+              "name": "config.enterpriseTiers",
+              "value": "={{ String($env.ENTERPRISE_TIERS ?? 'enterprise,strategic').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "caaed0a9-866c-537c-aaf4-9719f23bc497",
+              "name": "config.growthTiers",
+              "value": "={{ String($env.GROWTH_TIERS ?? 'growth,mid-market,mid market').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "43a45f50-d21b-53f1-9146-3c84c1c24551",
+              "name": "config.enterpriseArrThreshold",
+              "value": "={{ Math.min(1000000000, Math.max(0, Number.isFinite(parseFloat($env.ENTERPRISE_ARR_THRESHOLD)) ? parseFloat($env.ENTERPRISE_ARR_THRESHOLD) : 0)) }}",
+              "type": "number"
+            },
+            {
+              "id": "caa1895e-7c28-567c-9051-109cf20b48bb",
+              "name": "config.renewalWindowDays",
+              "value": "={{ Math.min(730, Math.max(0, Number.isFinite(parseFloat($env.RENEWAL_WINDOW_DAYS)) ? Math.round(parseFloat($env.RENEWAL_WINDOW_DAYS)) : 90)) }}",
+              "type": "number"
+            },
+            {
+              "id": "c3cc52db-4246-5512-bfbe-199df9d89bf0",
+              "name": "config.churnKeywords",
+              "value": "={{ String($env.CHURN_KEYWORDS ?? 'cancel,cancelling,churn,competitor,switching,switch to,other vendors,another vendor,alternatives,not renewing,terminate,refund,leaving,moving to').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "ed5b9697-aa59-5bd4-be79-aa784807ecfc",
+              "name": "config.escalateGrowthOnChurnSignal",
+              "value": "={{ String($env.ESCALATE_GROWTH_ON_CHURN_SIGNAL ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "aa8afdb9-6f14-57ad-bb14-f4501fe8055a",
+              "name": "config.smbDetractorAction",
+              "value": "={{ ['task', 'alert', 'none'].includes(String($env.SMB_DETRACTOR_ACTION ?? 'task').trim().toLowerCase()) ? String($env.SMB_DETRACTOR_ACTION ?? 'task').trim().toLowerCase() : 'task' }}",
+              "type": "string"
+            },
+            {
+              "id": "807a2833-25e9-5057-a5b0-ede98d521f60",
+              "name": "config.passiveFollowUp",
+              "value": "={{ String($env.PASSIVE_FOLLOW_UP ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "fc9452fb-3371-545f-8150-fba457be65e1",
+              "name": "config.internalDomains",
+              "value": "={{ String($env.INTERNAL_EMAIL_DOMAINS ?? '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean).length ? String($env.INTERNAL_EMAIL_DOMAINS ?? '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) : ((String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? ['company.example'] : []) }}",
+              "type": "array"
+            },
+            {
+              "id": "b861dcab-ec0d-5291-92b0-98fe0df7568d",
+              "name": "config.testNamePatterns",
+              "value": "={{ String($env.TEST_NAME_PATTERNS ?? '[test],test user,qa test,qa only,do not use,dummy').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "d20019dd-944f-5720-a45e-b22a1e011d4c",
+              "name": "config.testDomains",
+              "value": "={{ String($env.TEST_DOMAINS ?? '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "f2785f80-002a-555d-b8ec-0a47f75123fe",
+              "name": "config.maxSubmissionAgeHours",
+              "value": "={{ Math.min(8760, Math.max(1, Number.isFinite(parseFloat($env.MAX_SUBMISSION_AGE_HOURS)) ? Math.round(parseFloat($env.MAX_SUBMISSION_AGE_HOURS)) : 72)) }}",
+              "type": "number"
+            },
+            {
+              "id": "ef1b72a3-4fc9-598b-9f22-d068543b4be3",
+              "name": "config.pollLookbackMinutes",
+              "value": "={{ Math.min(10080, Math.max(5, Number.isFinite(parseFloat($env.POLL_LOOKBACK_MINUTES)) ? Math.round(parseFloat($env.POLL_LOOKBACK_MINUTES)) : 30)) }}",
+              "type": "number"
+            },
+            {
+              "id": "9bbf97e4-e906-562b-ac15-3576fc48d8c0",
+              "name": "config.maxSubmissionsPerRun",
+              "value": "={{ Math.min(100, Math.max(1, Number.isFinite(parseFloat($env.MAX_SUBMISSIONS_PER_RUN)) ? Math.round(parseFloat($env.MAX_SUBMISSIONS_PER_RUN)) : 100)) }}",
+              "type": "number"
+            },
+            {
+              "id": "5ccb066a-d260-56a1-b759-9fe22234e5e6",
+              "name": "config.cooldownHours",
+              "value": "={{ Math.min(720, Math.max(0, Number.isFinite(parseFloat($env.COOLDOWN_HOURS)) ? Math.round(parseFloat($env.COOLDOWN_HOURS)) : 24)) }}",
+              "type": "number"
+            },
+            {
+              "id": "e49fe989-a9e8-5e9c-9f72-33df251a4aa6",
+              "name": "config.emergencyRouting",
+              "value": "={{ (() => { const t = String($env.EMERGENCY_ROUTING ?? '').trim(); if (t) { try { const j = JSON.parse(t); if (j && typeof j === 'object' && !Array.isArray(j)) return j; } catch (e) { return { default: { name: 'Customer Success' }, invalid: true }; } } return (String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? { owners: { \"87000001\": { name: \"CSM North (synthetic)\", slack: \"U00000CS1\" }, \"87000002\": { name: \"CSM South (synthetic)\", slack: \"U00000CS2\" }, \"87000003\": { name: \"CSM Growth (synthetic)\", slack: \"U00000CS3\" } }, tiers: { \"Enterprise\": { name: \"Enterprise CS lead (synthetic)\", slack: \"U00000CSL\" } }, leadership: { name: \"VP Customer Success (synthetic)\", slack: \"U00000VPC\" }, default: { name: \"Customer Success\" } } : { default: { name: 'Customer Success' } }; })() }}",
+              "type": "object"
+            },
+            {
+              "id": "8b94cdd6-cb99-5c17-9419-baa46103586e",
+              "name": "config.mentionHereOnEmergency",
+              "value": "={{ String($env.MENTION_HERE_ON_EMERGENCY ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "dfd59c71-b2ac-5f1f-8d67-43bcbf80e2c8",
+              "name": "config.huddleUrlTemplate",
+              "value": "={{ String($env.HUDDLE_MEETING_URL_TEMPLATE ?? '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "83a3e18c-4645-5763-a3a2-31a5b080b7ba",
+              "name": "config.includeComment",
+              "value": "={{ String($env.INCLUDE_COMMENT_PREVIEW ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "7d9199d4-1eaa-56ec-b52d-d66f5c5a54b4",
+              "name": "config.commentChars",
+              "value": "={{ Math.min(1500, Math.max(0, Number.isFinite(parseFloat($env.COMMENT_PREVIEW_CHARS)) ? Math.round(parseFloat($env.COMMENT_PREVIEW_CHARS)) : 300)) }}",
+              "type": "number"
+            },
+            {
+              "id": "ea14851f-be0d-5fbc-ae2d-356a3f69456e",
+              "name": "config.showContactName",
+              "value": "={{ String($env.SHOW_CONTACT_NAME ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "35a9b6cc-40b5-5e58-8b4b-8b8baa24524e",
+              "name": "config.currencySymbol",
+              "value": "={{ String($env.CURRENCY_SYMBOL ?? '$').trim() || '$' }}",
+              "type": "string"
+            },
+            {
+              "id": "e2dc11b3-67b1-587e-80cc-336e58a1ec69",
+              "name": "config.taskDueHoursEmergency",
+              "value": "={{ Math.min(168, Math.max(1, Number.isFinite(parseFloat($env.TASK_DUE_HOURS_EMERGENCY)) ? Math.round(parseFloat($env.TASK_DUE_HOURS_EMERGENCY)) : 4)) }}",
+              "type": "number"
+            },
+            {
+              "id": "ca57370e-e302-5aa5-85e6-1f7a23aace34",
+              "name": "config.taskDueHoursHigh",
+              "value": "={{ Math.min(336, Math.max(1, Number.isFinite(parseFloat($env.TASK_DUE_HOURS_HIGH)) ? Math.round(parseFloat($env.TASK_DUE_HOURS_HIGH)) : 24)) }}",
+              "type": "number"
+            },
+            {
+              "id": "80e78cc2-ab85-5236-8345-df4ac9db434a",
+              "name": "config.taskDueHoursStandard",
+              "value": "={{ Math.min(720, Math.max(1, Number.isFinite(parseFloat($env.TASK_DUE_HOURS_STANDARD)) ? Math.round(parseFloat($env.TASK_DUE_HOURS_STANDARD)) : 72)) }}",
+              "type": "number"
+            },
+            {
+              "id": "4e2ec628-2d64-540e-be21-760474b3efda",
+              "name": "config.csmOwnerProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.CSM_OWNER_PROPERTY ?? 'hubspot_owner_id').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "fbc96540-a959-5dae-bda2-3ef2cc425f49",
+              "name": "config.aeOwnerProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.AE_OWNER_PROPERTY ?? '').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "78007a24-a4cf-57ef-8029-a0720e9f22ea",
+              "name": "config.defaultTaskOwnerId",
+              "value": "={{ /^\\d+$/.test(String($env.DEFAULT_TASK_OWNER_ID ?? '').trim()) ? String($env.DEFAULT_TASK_OWNER_ID).trim() : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ef370a66-0908-5201-8bc0-e480726ab073",
+              "name": "config.ticketPipelineId",
+              "value": "={{ String($env.TICKET_PIPELINE_ID ?? '0').trim() || '0' }}",
+              "type": "string"
+            },
+            {
+              "id": "6c97fc57-51de-52d3-af2a-b3d7883047ae",
+              "name": "config.ticketStageId",
+              "value": "={{ String($env.TICKET_STAGE_ID ?? '1').trim() || '1' }}",
+              "type": "string"
+            },
+            {
+              "id": "81a6d9e4-f9b5-50ef-b940-4c74bb8a6766",
+              "name": "config.companyTierProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.COMPANY_TIER_PROPERTY ?? 'customer_tier').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "01f22523-8893-59e9-b63f-17ad8bc1027c",
+              "name": "config.arrProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.ARR_PROPERTY ?? 'annual_contract_value').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "46b432c3-bd07-5124-bc83-d2aace735f39",
+              "name": "config.renewalDateProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.RENEWAL_DATE_PROPERTY ?? 'renewal_date').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "51d2bd4c-e888-5842-bfb6-f6a227ef9558",
+              "name": "config.retentionStatusProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.RETENTION_STATUS_PROPERTY ?? 'retention_status').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "cf34661f-a4a7-56ea-aa1f-a4cd2dad2b1f",
+              "name": "config.retentionAtRiskValue",
+              "value": "={{ String($env.RETENTION_AT_RISK_VALUE ?? 'At Risk').trim() || 'At Risk' }}",
+              "type": "string"
+            },
+            {
+              "id": "8401b282-d06b-548e-a68b-8c8853e38db1",
+              "name": "config.lastNpsScoreProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.LAST_NPS_SCORE_PROPERTY ?? 'last_nps_score').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "ecc240c5-28fb-5a70-a517-b9a6b3a6a74d",
+              "name": "config.lastNpsCategoryProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.LAST_NPS_CATEGORY_PROPERTY ?? 'last_nps_category').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "b1fa4e81-75a8-5928-957b-43b5400f7d13",
+              "name": "config.lastNpsSubmissionProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.LAST_NPS_SUBMISSION_PROPERTY ?? 'last_nps_submission_id').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "b3b97f09-1bf3-5ae0-84d9-2459ce44cc7c",
+              "name": "config.lastAlertProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.LAST_ALERT_PROPERTY ?? 'last_nps_alert_at').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "35937159-1487-5478-b16e-6d0f86be3d49",
+              "name": "config.lastAlertTierProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.LAST_ALERT_TIER_PROPERTY ?? 'last_nps_alert_tier').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "cc9f941d-789f-50bf-ac0c-217b7ef71266",
+              "name": "config.portalId",
+              "value": "={{ /^\\d+$/.test(String($env.HUBSPOT_PORTAL_ID ?? '').trim()) ? String($env.HUBSPOT_PORTAL_ID).trim() : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "884fd6df-019e-58a8-aa8f-e16fd9237dc1",
+              "name": "config.requireWebhookToken",
+              "value": "={{ String($env.REQUIRE_WEBHOOK_TOKEN ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "77f56103-ea13-5a0a-a586-7f101f79fe33",
+              "name": "config.hubspotBaseUrl",
+              "value": "={{ String($env.HUBSPOT_API_BASE_URL ?? 'https://api.hubapi.com').trim().replace(/\\/+$/, '') || 'https://api.hubapi.com' }}",
+              "type": "string"
+            },
+            {
+              "id": "59d7e797-3880-500d-bc51-1a2a38e53997",
+              "name": "config.runId",
+              "value": "={{ $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "714138e5-1da4-51be-904a-094b10b4ceef",
+              "name": "config.executionMode",
+              "value": "={{ $execution.mode }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "07c092fa-a185-526e-b4f6-0c44b08caecb",
+      "name": "Config & Safety Gate",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -380,
+        220
+      ],
+      "notes": "Typed, non-secret configuration under config.*. Flags record only whether a secret or URL is set.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a864e909-5519-5778-b5c6-b13e0de45963",
+              "leftValue": "={{ $('NPS Submission Webhook').isExecuted }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "be700fa0-0386-5d4e-955c-cf4d75278ad9",
+      "name": "From Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Parse & Verify Webhook\n// Accepts a HubSpot workflow \"Send a webhook\" call (or any sender) with:\n//   { \"feedbackSubmissionId\": \"…\" } / { \"submissionIds\": [...] }      → read from HubSpot\n//   { \"contactId\": \"…\", \"score\": 3, \"comment\": \"…\", \"submittedAt\": \"…\" } → used as given\n// or an array of those. Outside sandbox the shared token must match\n// (Authorization: Bearer … or X-Webhook-Token).\n// Security note: WEBHOOK_SHARED_TOKEN is read here only because n8n's built-in\n// webhook header auth needs a stored credential. It never leaves this node.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst req = $('NPS Submission Webhook').first().json;\nlet auth = 'skipped (sandbox)';\nif (!cfg.sandboxMode && cfg.requireWebhookToken) {\n  let crypto; try { crypto = require('crypto'); } catch (e) { throw new Error('Webhook token check needs NODE_FUNCTION_ALLOW_BUILTIN=crypto.'); }\n  let expected = ''; try { expected = String($env.WEBHOOK_SHARED_TOKEN || ''); } catch (e) { expected = ''; }\n  if (!expected) throw new Error('Rejected: WEBHOOK_SHARED_TOKEN is not set and REQUIRE_WEBHOOK_TOKEN is not false.');\n  const h = Object.fromEntries(Object.entries(req.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));\n  const got = (h.authorization || '').replace(/^Bearer\\s+/i, '') || h['x-webhook-token'] || '';\n  const a = crypto.createHash('sha256').update(got).digest(); const b = crypto.createHash('sha256').update(expected).digest();\n  if (!got || !crypto.timingSafeEqual(a, b)) throw new Error('Rejected: missing or invalid webhook token.');\n  auth = 'verified';\n} else if (!cfg.sandboxMode) auth = 'disabled (REQUIRE_WEBHOOK_TOKEN=false)';\nlet body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }\nconst events = Array.isArray(body) ? body : [body || {}];\nconst ids = []; const inline = []; const ignored = [];\nfor (const e of events) {\n  const sid = e.feedbackSubmissionId ?? e.feedback_submission_id ?? e.submissionId ?? e.hs_object_id ?? (e.subscriptionType ? e.objectId : null);\n  for (const id of [sid, ...(Array.isArray(e.submissionIds) ? e.submissionIds : [])].filter((x) => x !== null && x !== undefined)) if (/^\\d+$/.test(String(id))) ids.push(String(id));\n  if (!sid && (e.contactId || e.contact_id) && e.score !== undefined) {\n    inline.push({ submissionId: String(e.id || `inline-${e.contactId || e.contact_id}-${e.submittedAt || e.submitted_at || Date.now()}`), contactId: String(e.contactId || e.contact_id),\n      score: Number(e.score), comment: String(e.comment || e.feedback || '').slice(0, 5000), surveyType: String(e.surveyType || e.survey_type || 'NPS'), surveyName: e.surveyName || null,\n      submittedAt: e.submittedAt || e.submitted_at || new Date().toISOString() });\n  } else if (!sid && !(Array.isArray(e.submissionIds) && e.submissionIds.length)) ignored.push({ reason: 'no_submission_id_or_contact_score', keys: Object.keys(e).slice(0, 8) });\n}\nreturn [{ json: { auth, received: events.length, ids: [...new Set(ids)].slice(0, cfg.maxSubmissionsPerRun), inline: inline.slice(0, cfg.maxSubmissionsPerRun), ignored } }];\n"
+      },
+      "id": "9a3df467-e7ce-5573-a647-f8895b949a1d",
+      "name": "Parse & Verify Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        100
+      ],
+      "notes": "Shared-token check, submission IDs or inline scores.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "fd5b3297-1cdd-546b-be94-2613d2c908b1",
+              "leftValue": "={{ $('Config & Safety Gate').first().json.config.sandboxMode }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cb80211d-92aa-5e9b-98d8-48fb23d8c1a8",
+      "name": "Sandbox Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        280,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Mock NPS Context (SANDBOX_MODE=true)\n// sample-payloads/hubspot-nps-responses.json → the same shape \"Assemble NPS\n// Context\" builds on the live path. _relative offsets (submission time,\n// renewal date, last alert) are resolved against now. No HubSpot call.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst FIXTURE = {\n  \"_comment\": \"Synthetic fixture: feedback submissions (CRM search shape) plus the contacts and companies they resolve to. All people, companies, emails and IDs are fictitious. _relative offsets are resolved against the current time by the sandbox node; _scenario documents the expected result (README \\u00a75).\",\n  \"results\": [\n    {\n      \"id\": \"3300001\",\n      \"contactId\": \"9100101\",\n      \"properties\": {\n        \"hs_object_id\": \"3300001\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"2\",\n        \"hs_response_text\": \"Honestly we are evaluating other vendors before our renewal. Too many outages this quarter and nobody proactive from your side.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 0.5\n      },\n      \"_scenario\": \"emergency: Enterprise detractor, churn language, renewal in 60 days\"\n    },\n    {\n      \"id\": \"3300002\",\n      \"contactId\": \"9100102\",\n      \"properties\": {\n        \"hs_object_id\": \"3300002\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"5\",\n        \"hs_response_text\": \"Support has been slow lately and the last release broke our SSO.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1\n      },\n      \"_scenario\": \"emergency: Enterprise detractor, previous NPS 9 (sentiment drop)\"\n    },\n    {\n      \"id\": \"3300003\",\n      \"contactId\": \"9100103\",\n      \"properties\": {\n        \"hs_object_id\": \"3300003\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"4\",\n        \"hs_response_text\": \"Reporting is still missing the export we were promised.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1.5\n      },\n      \"_scenario\": \"high: Growth detractor, previous 8\"\n    },\n    {\n      \"id\": \"3300004\",\n      \"contactId\": \"9100104\",\n      \"properties\": {\n        \"hs_object_id\": \"3300004\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"6\",\n        \"hs_response_text\": \"Thinking of switching to a competitor if the API limits don't improve.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 2\n      },\n      \"_scenario\": \"high: Growth detractor with churn signal\"\n    },\n    {\n      \"id\": \"3300005\",\n      \"contactId\": \"9100105\",\n      \"properties\": {\n        \"hs_object_id\": \"3300005\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"3\",\n        \"hs_response_text\": \"Too expensive for what we use.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 2\n      },\n      \"_scenario\": \"standard: SMB detractor \\u2192 follow-up task only\"\n    },\n    {\n      \"id\": \"3300006\",\n      \"contactId\": \"9100106\",\n      \"properties\": {\n        \"hs_object_id\": \"3300006\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"7\",\n        \"hs_response_text\": \"Works fine, onboarding could be smoother.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 3\n      },\n      \"_scenario\": \"standard: passive\"\n    },\n    {\n      \"id\": \"3300007\",\n      \"contactId\": \"9100107\",\n      \"properties\": {\n        \"hs_object_id\": \"3300007\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"10\",\n        \"hs_response_text\": \"Fantastic team, the new dashboards saved us hours.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 3\n      },\n      \"_scenario\": \"standard: promoter\"\n    },\n    {\n      \"id\": \"3300008\",\n      \"contactId\": \"9100108\",\n      \"properties\": {\n        \"hs_object_id\": \"3300008\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"0\",\n        \"hs_response_text\": \"Testing the survey link before the customer send.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1\n      },\n      \"_scenario\": \"filtered: internal submission\"\n    },\n    {\n      \"id\": \"3300009\",\n      \"contactId\": \"9100109\",\n      \"properties\": {\n        \"hs_object_id\": \"3300009\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"1\",\n        \"hs_response_text\": \"qa run\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1\n      },\n      \"_scenario\": \"filtered: test account\"\n    },\n    {\n      \"id\": \"3300010\",\n      \"contactId\": \"9100112\",\n      \"properties\": {\n        \"hs_object_id\": \"3300010\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"3\",\n        \"hs_response_text\": \"Second ticket this month about delayed shipments sync.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 0.7\n      },\n      \"_scenario\": \"emergency: same company as 3300001 \\u2192 grouped into one alert\"\n    },\n    {\n      \"id\": \"3300011\",\n      \"contactId\": \"9100110\",\n      \"properties\": {\n        \"hs_object_id\": \"3300011\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"4\",\n        \"hs_response_text\": \"Billing errors again.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 120\n      },\n      \"_scenario\": \"filtered: older than MAX_SUBMISSION_AGE_HOURS\"\n    },\n    {\n      \"id\": \"3300012\",\n      \"contactId\": \"9100106\",\n      \"properties\": {\n        \"hs_object_id\": \"3300012\",\n        \"hs_survey_type\": \"CSAT\",\n        \"hs_survey_name\": \"Support CSAT (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"2\",\n        \"hs_response_text\": \"The chat agent was unhelpful.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1\n      },\n      \"_scenario\": \"filtered: not an NPS survey\"\n    },\n    {\n      \"id\": \"3300013\",\n      \"contactId\": \"9100111\",\n      \"properties\": {\n        \"hs_object_id\": \"3300013\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"6\",\n        \"hs_response_text\": \"Integration issues keep coming back.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1\n      },\n      \"_scenario\": \"emergency: Enterprise detractor, but company alerted 6h ago \\u2192 Slack suppressed, no duplicate task\"\n    },\n    {\n      \"id\": \"3300003\",\n      \"contactId\": \"9100103\",\n      \"properties\": {\n        \"hs_object_id\": \"3300003\",\n        \"hs_survey_type\": \"NPS\",\n        \"hs_survey_name\": \"Quarterly NPS (synthetic)\",\n        \"hs_survey_id\": \"5550001\",\n        \"hs_value\": \"4\",\n        \"hs_response_text\": \"Reporting is still missing the export we were promised.\",\n        \"hs_survey_channel\": \"EMAIL\"\n      },\n      \"_relative\": {\n        \"submittedHoursAgo\": 1.5\n      },\n      \"_scenario\": \"filtered: duplicate delivery of 3300003\"\n    }\n  ],\n  \"contacts\": {\n    \"9100101\": {\n      \"id\": \"9100101\",\n      \"properties\": {\n        \"firstname\": \"Sarah\",\n        \"lastname\": \"Jenkins\",\n        \"email\": \"sarah.jenkins@example.com\",\n        \"jobtitle\": \"VP Operations\",\n        \"associatedcompanyid\": \"7000101\"\n      }\n    },\n    \"9100102\": {\n      \"id\": \"9100102\",\n      \"properties\": {\n        \"firstname\": \"Marcus\",\n        \"lastname\": \"Vance\",\n        \"email\": \"marcus.vance@example.com\",\n        \"jobtitle\": \"Head of IT\",\n        \"associatedcompanyid\": \"7000102\"\n      }\n    },\n    \"9100103\": {\n      \"id\": \"9100103\",\n      \"properties\": {\n        \"firstname\": \"Priya\",\n        \"lastname\": \"Nair\",\n        \"email\": \"priya.nair@example.com\",\n        \"jobtitle\": \"Operations Manager\",\n        \"associatedcompanyid\": \"7000103\"\n      }\n    },\n    \"9100104\": {\n      \"id\": \"9100104\",\n      \"properties\": {\n        \"firstname\": \"Diego\",\n        \"lastname\": \"Alvarez\",\n        \"email\": \"diego.alvarez@example.com\",\n        \"jobtitle\": \"Director of eCommerce\",\n        \"associatedcompanyid\": \"7000104\"\n      }\n    },\n    \"9100105\": {\n      \"id\": \"9100105\",\n      \"properties\": {\n        \"firstname\": \"Hannah\",\n        \"lastname\": \"Cole\",\n        \"email\": \"hannah.cole@example.com\",\n        \"jobtitle\": \"Founder\",\n        \"associatedcompanyid\": \"7000105\"\n      }\n    },\n    \"9100106\": {\n      \"id\": \"9100106\",\n      \"properties\": {\n        \"firstname\": \"Tom\",\n        \"lastname\": \"Becker\",\n        \"email\": \"tom.becker@example.com\",\n        \"jobtitle\": \"CTO\",\n        \"associatedcompanyid\": \"7000106\"\n      }\n    },\n    \"9100107\": {\n      \"id\": \"9100107\",\n      \"properties\": {\n        \"firstname\": \"Lena\",\n        \"lastname\": \"Vogel\",\n        \"email\": \"lena.vogel@example.com\",\n        \"jobtitle\": \"Finance Director\",\n        \"associatedcompanyid\": \"7000107\"\n      }\n    },\n    \"9100108\": {\n      \"id\": \"9100108\",\n      \"properties\": {\n        \"firstname\": \"Internal\",\n        \"lastname\": \"Reviewer\",\n        \"email\": \"cs.reviewer@company.example\",\n        \"jobtitle\": \"CS Ops\",\n        \"associatedcompanyid\": \"7000101\"\n      }\n    },\n    \"9100109\": {\n      \"id\": \"9100109\",\n      \"properties\": {\n        \"firstname\": \"Test\",\n        \"lastname\": \"User\",\n        \"email\": \"test.user@example.com\",\n        \"jobtitle\": \"QA\",\n        \"associatedcompanyid\": \"7000108\"\n      }\n    },\n    \"9100110\": {\n      \"id\": \"9100110\",\n      \"properties\": {\n        \"firstname\": \"Jordan\",\n        \"lastname\": \"Lee\",\n        \"email\": \"jordan.lee@example.com\",\n        \"jobtitle\": \"Logistics Lead\",\n        \"associatedcompanyid\": \"7000109\"\n      }\n    },\n    \"9100111\": {\n      \"id\": \"9100111\",\n      \"properties\": {\n        \"firstname\": \"Camille\",\n        \"lastname\": \"Durand\",\n        \"email\": \"camille.durand@example.com\",\n        \"jobtitle\": \"COO\",\n        \"associatedcompanyid\": \"7000110\"\n      }\n    },\n    \"9100112\": {\n      \"id\": \"9100112\",\n      \"properties\": {\n        \"firstname\": \"Marcus\",\n        \"lastname\": \"Reid\",\n        \"email\": \"marcus.reid@example.com\",\n        \"jobtitle\": \"IT Manager\",\n        \"associatedcompanyid\": \"7000101\"\n      }\n    }\n  },\n  \"companies\": {\n    \"7000101\": {\n      \"id\": \"7000101\",\n      \"properties\": {\n        \"name\": \"Apex Logistics\",\n        \"domain\": \"apexlogistics.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"480000\",\n        \"hubspot_owner_id\": \"87000001\",\n        \"last_nps_score\": null,\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 60\n      }\n    },\n    \"7000102\": {\n      \"id\": \"7000102\",\n      \"properties\": {\n        \"name\": \"Vanguard Cloud\",\n        \"domain\": \"vanguardcloud.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"310000\",\n        \"hubspot_owner_id\": \"87000002\",\n        \"last_nps_score\": \"9\",\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 150\n      }\n    },\n    \"7000103\": {\n      \"id\": \"7000103\",\n      \"properties\": {\n        \"name\": \"Orchid Health\",\n        \"domain\": \"orchidhealth.example.com\",\n        \"customer_tier\": \"Growth\",\n        \"annual_contract_value\": \"64000\",\n        \"hubspot_owner_id\": \"87000003\",\n        \"last_nps_score\": \"8\",\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 200\n      }\n    },\n    \"7000104\": {\n      \"id\": \"7000104\",\n      \"properties\": {\n        \"name\": \"Summit Retail\",\n        \"domain\": \"summitretail.example.com\",\n        \"customer_tier\": \"Growth\",\n        \"annual_contract_value\": \"52000\",\n        \"hubspot_owner_id\": \"87000003\",\n        \"last_nps_score\": null,\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 45\n      }\n    },\n    \"7000105\": {\n      \"id\": \"7000105\",\n      \"properties\": {\n        \"name\": \"Brightwater Labs\",\n        \"domain\": \"brightwater.example.com\",\n        \"customer_tier\": \"SMB\",\n        \"annual_contract_value\": \"9000\",\n        \"hubspot_owner_id\": \"87000004\",\n        \"last_nps_score\": null,\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 300\n      }\n    },\n    \"7000106\": {\n      \"id\": \"7000106\",\n      \"properties\": {\n        \"name\": \"Northwind Media\",\n        \"domain\": \"northwindmedia.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"220000\",\n        \"hubspot_owner_id\": \"87000002\",\n        \"last_nps_score\": \"6\",\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 120\n      }\n    },\n    \"7000107\": {\n      \"id\": \"7000107\",\n      \"properties\": {\n        \"name\": \"Kestrel Fintech\",\n        \"domain\": \"kestrelfintech.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"390000\",\n        \"hubspot_owner_id\": \"87000001\",\n        \"last_nps_score\": \"9\",\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 240\n      }\n    },\n    \"7000108\": {\n      \"id\": \"7000108\",\n      \"properties\": {\n        \"name\": \"QA Test Account\",\n        \"domain\": \"qa-test.example.com\",\n        \"customer_tier\": \"Internal\",\n        \"annual_contract_value\": \"0\",\n        \"hubspot_owner_id\": \"87000004\",\n        \"last_nps_score\": null,\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": null\n      }\n    },\n    \"7000109\": {\n      \"id\": \"7000109\",\n      \"properties\": {\n        \"name\": \"Harbor Freightways\",\n        \"domain\": \"harborfreightways.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"275000\",\n        \"hubspot_owner_id\": \"87000002\",\n        \"last_nps_score\": null,\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 90\n      }\n    },\n    \"7000110\": {\n      \"id\": \"7000110\",\n      \"properties\": {\n        \"name\": \"Lumiere Optique\",\n        \"domain\": \"lumiereoptique.example.com\",\n        \"customer_tier\": \"Enterprise\",\n        \"annual_contract_value\": \"205000\",\n        \"hubspot_owner_id\": \"87000001\",\n        \"last_nps_score\": \"4\",\n        \"retention_status\": \"Healthy\",\n        \"last_nps_alert_at\": null\n      },\n      \"_relative\": {\n        \"renewalInDays\": 75,\n        \"lastAlertHoursAgo\": 6\n      }\n    }\n  }\n};\nconst H = 3600000; const now = Date.now();\nconst company = (id) => {\n  const c = FIXTURE.companies[id]; if (!c) return null;\n  const p = { ...c.properties }; const rel = c._relative || {};\n  const out = { id: c.id, name: p.name, domain: p.domain, tier: p.customer_tier, arr: Number(p.annual_contract_value) || null, ownerId: p.hubspot_owner_id || null,\n    previousNps: p.last_nps_score === null || p.last_nps_score === undefined ? null : Number(p.last_nps_score), retentionStatus: p.retention_status || null,\n    lastSubmissionId: null, renewalDate: Number.isFinite(rel.renewalInDays) ? new Date(now + rel.renewalInDays * 24 * H).toISOString().slice(0, 10) : null,\n    lastAlertAt: Number.isFinite(rel.lastAlertHoursAgo) ? new Date(now - rel.lastAlertHoursAgo * H).toISOString() : null, lastAlertTier: Number.isFinite(rel.lastAlertHoursAgo) ? 'emergency' : null };\n  return out;\n};\nconst submissions = FIXTURE.results.slice(0, cfg.maxSubmissionsPerRun).map((r) => {\n  const ct = FIXTURE.contacts[r.contactId];\n  const cp = ct ? ct.properties : {};\n  return {\n    submissionId: r.id, surveyType: r.properties.hs_survey_type, surveyName: r.properties.hs_survey_name,\n    score: r.properties.hs_value === null ? null : Number(r.properties.hs_value), comment: r.properties.hs_response_text || '',\n    submittedAt: new Date(now - (r._relative?.submittedHoursAgo ?? 1) * H).toISOString(),\n    contact: ct ? { id: ct.id, name: `${cp.firstname} ${cp.lastname}`, email: cp.email, jobTitle: cp.jobtitle } : { id: null, name: null, email: null, jobTitle: null },\n    company: ct ? company(cp.associatedcompanyid) : null,\n  };\n});\nreturn [{ json: { source: 'fixture', submissions, readErrors: [] } }];\n"
+      },
+      "id": "618056df-a2c5-570f-8ebb-cf41f15afafc",
+      "name": "Mock NPS Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        20
+      ],
+      "notes": "sample-payloads/hubspot-nps-responses.json.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "91db6369-bf3d-5e90-a16b-29e51f4e44be",
+              "leftValue": "={{ $('Parse & Verify Webhook').isExecuted }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ffac0057-50d1-5b6a-969c-e05a76638bb3",
+      "name": "Webhook Items?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/feedback_submissions/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'hs_survey_type', operator: 'IN', values: $('Config & Safety Gate').first().json.config.npsSurveyTypesRaw }, { propertyName: 'hs_createdate', operator: 'GTE', value: String(Date.now() - $('Config & Safety Gate').first().json.config.pollLookbackMinutes * 60000) }] }], sorts: [{ propertyName: 'hs_createdate', direction: 'DESCENDING' }], properties: ['hs_value', 'hs_survey_type'], limit: $('Config & Safety Gate').first().json.config.maxSubmissionsPerRun }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "4c6adcc7-474a-51c2-9342-398eb7627a8c",
+      "name": "HubSpot: Search NPS Submissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Polling fallback. Scope: crm.objects.feedback_submissions.read.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Submission Reads\n// Submission IDs from the webhook or the polling search, plus inline\n// submissions (contact + score given directly). Prepares the batch read of\n// feedback submissions and their contact associations.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nlet ids = []; let inline = []; let source = 'poll';\nif ($('Parse & Verify Webhook').isExecuted) { const w = $('Parse & Verify Webhook').first().json; ids = w.ids; inline = w.inline; source = 'webhook'; }\nelse {\n  const pages = $('HubSpot: Search NPS Submissions').all().map((i) => i.json);\n  if (pages.length === 1 && pages[0].error) throw new Error(`Feedback submission search failed: ${JSON.stringify(pages[0].error).slice(0, 300)}`);\n  ids = [...new Set(pages.flatMap((p) => (p.results || []).map((r) => String(r.id))))].slice(0, cfg.maxSubmissionsPerRun);\n}\nconst inputs = (ids.length ? ids : ['0']).map((id) => ({ id }));\nreturn [{ json: { source, ids, inline, empty: ids.length + inline.length === 0,\n  readBody: { properties: ['hs_value', 'hs_survey_type', 'hs_survey_name', 'hs_survey_id', 'hs_response_text', 'hs_sentiment', 'hs_createdate', 'hs_submission_timestamp'], inputs },\n  assocBody: { inputs } } }];\n"
+      },
+      "id": "d319a7bd-bd0d-5472-ba91-ea7930130cf4",
+      "name": "Build Submission Reads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b5718ca9-4659-54f8-8a13-8741a8e96921",
+              "leftValue": "={{ $json.empty !== true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0ba1ef55-f5bc-56d2-9523-6388c9243264",
+      "name": "Has Submissions?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/feedback_submissions/batch/read",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.readBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "9385460f-86fd-5643-a2a4-26a4a156d1cb",
+      "name": "HubSpot: Batch Read Submissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Score (hs_value), survey type, comment. Read-only object.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v4/associations/feedback_submissions/contacts/batch/read",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Submission Reads').first().json.assocBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d97c2ac5-06be-55df-8843-3b99dc0eeb5f",
+      "name": "HubSpot: Submission → Contact Associations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Contact Reads\n// Joins submissions (read from HubSpot) with their associated contact and\n// adds inline submissions; prepares the contact batch read.\n// ─────────────────────────────────────────────────────────────────────────────\nconst base = $('Build Submission Reads').first().json;\nconst subsResp = $('HubSpot: Batch Read Submissions').first().json || {};\nconst assoc = $input.first().json || {};\nconst contactBySub = {};\nfor (const r of assoc.results || []) { const to = (r.to || [])[0]; if (to) contactBySub[String(r.from?.id)] = String(to.toObjectId); }\nconst subs = (subsResp.results || []).map((r) => ({\n  submissionId: String(r.id), contactId: contactBySub[String(r.id)] || null,\n  score: r.properties?.hs_value === null || r.properties?.hs_value === undefined || r.properties?.hs_value === '' ? null : Number(r.properties.hs_value),\n  comment: r.properties?.hs_response_text || '', surveyType: r.properties?.hs_survey_type || null, surveyName: r.properties?.hs_survey_name || null,\n  submittedAt: r.properties?.hs_submission_timestamp || r.properties?.hs_createdate || r.createdAt || null,\n}));\nconst all = [...subs, ...base.inline];\nconst cIds = [...new Set(all.map((s) => s.contactId).filter(Boolean))];\nreturn [{ json: { submissions: all, readErrors: [subsResp.error ? 'submissions_read_failed' : null, assoc.error ? 'submission_contact_associations_failed' : null].filter(Boolean),\n  contactBody: { properties: ['firstname', 'lastname', 'email', 'jobtitle', 'associatedcompanyid'], inputs: (cIds.length ? cIds : ['0']).map((id) => ({ id })) } } }];\n"
+      },
+      "id": "cc99e757-84aa-5516-bdb7-adc92cf48060",
+      "name": "Build Contact Reads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/contacts/batch/read",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.contactBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "efd9cae2-e817-588e-b788-91fd64dc0865",
+      "name": "HubSpot: Batch Read Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Scope: crm.objects.contacts.read.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Company Reads\n// Primary company per contact (associatedcompanyid) → one batch read with\n// tier, contract value, renewal date, owners and NPS / retention properties.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst contacts = $input.first().json || {};\nconst ids = [...new Set((contacts.results || []).map((c) => c.properties?.associatedcompanyid).filter(Boolean).map(String))];\nconst props = [...new Set(['name', 'domain', cfg.companyTierProperty, cfg.arrProperty, cfg.renewalDateProperty, cfg.csmOwnerProperty, cfg.aeOwnerProperty,\n  cfg.lastNpsScoreProperty, cfg.retentionStatusProperty, cfg.lastNpsSubmissionProperty, cfg.lastAlertProperty, cfg.lastAlertTierProperty].filter(Boolean))];\nreturn [{ json: { companyBody: { properties: props, inputs: (ids.length ? ids : ['0']).map((id) => ({ id })) } } }];\n"
+      },
+      "id": "8d41b183-e151-5f84-a0d5-48aa81a41b94",
+      "name": "Build Company Reads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/companies/batch/read",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.companyBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "138f2b7c-5165-5662-a046-b2f7c78818b7",
+      "name": "HubSpot: Batch Read Companies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Tier, contract value, renewal, owners, NPS history. Scope: crm.objects.companies.read.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Assemble NPS Context\n// Submission + contact + primary company, in the same shape as\n// \"Mock NPS Context\". Failed reads leave that context empty.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst base = $('Build Contact Reads').first().json;\nconst contactsResp = $('HubSpot: Batch Read Contacts').first().json || {};\nconst companiesResp = $input.first().json || {};\nconst contacts = new Map((contactsResp.results || []).map((r) => [String(r.id), r]));\nconst companies = new Map((companiesResp.results || []).map((r) => [String(r.id), r]));\nconst num = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));\nconst submissions = base.submissions.map((s) => {\n  const ct = s.contactId ? contacts.get(s.contactId) : null; const cp = ct?.properties || {};\n  const co = cp.associatedcompanyid ? companies.get(String(cp.associatedcompanyid)) : null; const p = co?.properties || {};\n  return { ...s,\n    contact: ct ? { id: String(ct.id), name: [cp.firstname, cp.lastname].filter(Boolean).join(' ') || null, email: cp.email || null, jobTitle: cp.jobtitle || null } : { id: s.contactId, name: null, email: null, jobTitle: null },\n    company: co ? { id: String(co.id), name: p.name || null, domain: p.domain || null, tier: p[cfg.companyTierProperty] ?? null, arr: num(p[cfg.arrProperty]),\n      ownerId: p[cfg.csmOwnerProperty] || (cfg.aeOwnerProperty ? p[cfg.aeOwnerProperty] : null) || null, previousNps: num(p[cfg.lastNpsScoreProperty]),\n      retentionStatus: p[cfg.retentionStatusProperty] ?? null, lastSubmissionId: p[cfg.lastNpsSubmissionProperty] ?? null,\n      renewalDate: p[cfg.renewalDateProperty] ?? null, lastAlertAt: p[cfg.lastAlertProperty] ?? null, lastAlertTier: p[cfg.lastAlertTierProperty] ?? null } : null };\n});\nconst readErrors = [...base.readErrors, contactsResp.error ? 'contacts_read_failed' : null, companiesResp.error ? 'companies_read_failed' : null].filter(Boolean);\nreturn [{ json: { source: $('Build Submission Reads').first().json.source, submissions, readErrors } }];\n"
+      },
+      "id": "8de4b7b6-0d80-5076-b096-d312ae186b58",
+      "name": "Assemble NPS Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Detractor & Enterprise Urgency Analysis\n// Per submission:\n//  1. Filters: non-NPS surveys, missing score, internal submitters, test\n//     accounts, duplicates, submissions older than MAX_SUBMISSION_AGE_HOURS.\n//  2. NPS category: detractor 0–DETRACTOR_MAX (6), passive ≤ PASSIVE_MAX (8),\n//     promoter otherwise.\n//  3. Customer segment: enterprise (tier in ENTERPRISE_TIERS, or contract\n//     value ≥ ENTERPRISE_ARR_THRESHOLD), growth (GROWTH_TIERS), else smb.\n//  4. Context signals: previous NPS (drop / repeat detractor), renewal within\n//     RENEWAL_WINDOW_DAYS, churn language in the comment.\n//  5. response_tier:\n//       emergency  enterprise detractor (or growth detractor with a churn\n//                  signal when ESCALATE_GROWTH_ON_CHURN_SIGNAL=true)\n//       high       growth detractor (SMB detractor with SMB_DETRACTOR_ACTION=alert)\n//       standard   everything else (SMB detractors get a follow-up task by\n//                  default; passives one with PASSIVE_FOLLOW_UP=true)\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst { submissions, source, readErrors } = $input.first().json;\nconst NOW = Date.now(); const H = 3600000;\nconst lc = (s) => String(s ?? '').trim().toLowerCase();\nlet store = null; try { store = $getWorkflowStaticData('global'); } catch (e) { store = null; }\nconst seenMem = (store && store.npsSeen) || {};\nconst isInternal = (email) => { const d = lc(email).split('@')[1] || ''; return cfg.internalDomains.some((x) => d === x || d.endsWith(`.${x}`)); };\nconst isTest = (s) => cfg.testNamePatterns.some((p) => lc(s).includes(p));\nconst isTestDomain = (d) => cfg.testDomains.some((x) => lc(d) === x || lc(d).endsWith(`.${x}`));\nconst CHURN = cfg.churnKeywords;\nconst redact = (s) => String(s || '')\n  .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, '[email]')\n  .replace(/\\+?\\(?\\d[\\d\\s().-]{6,}\\d/g, (m) => (m.replace(/\\D/g, '').length >= 7 ? '[phone]' : m))\n  .replace(/\\s+/g, ' ').trim();\n\nconst seenRun = new Set();\nconst results = submissions.map((s) => {\n  const base = { submissionId: s.submissionId, score: s.score, surveyType: s.surveyType, surveyName: s.surveyName, submittedAt: s.submittedAt, contact: s.contact, company: s.company };\n  const skip = (reason) => ({ ...base, evaluated: false, skipReason: reason, response_tier: null, should_act: false });\n  if (seenRun.has(s.submissionId)) return skip('duplicate_in_run');\n  seenRun.add(s.submissionId);\n  if (seenMem[s.submissionId] || (s.company?.lastSubmissionId && String(s.company.lastSubmissionId) === s.submissionId)) return skip('already_processed');\n  if (!cfg.npsSurveyTypes.includes(lc(s.surveyType))) return skip(`not_nps_survey (${s.surveyType || 'unknown'})`);\n  if (s.score === null || !Number.isFinite(s.score) || s.score < 0 || s.score > 10) return skip('missing_or_invalid_score');\n  if (isInternal(s.contact?.email)) return skip('internal_submission');\n  if (isTest(s.contact?.name) || isTest(s.company?.name) || isTestDomain(s.company?.domain) || isTestDomain(lc(s.contact?.email).split('@')[1])) return skip('test_account');\n  const at = Date.parse(s.submittedAt || '');\n  if (Number.isFinite(at) && NOW - at > cfg.maxSubmissionAgeHours * H) return skip('older_than_max_age');\n  if (!s.company) return skip('no_company');\n\n  const category = s.score <= cfg.detractorMax ? 'detractor' : s.score <= cfg.passiveMax ? 'passive' : 'promoter';\n  const tierVal = lc(s.company.tier);\n  const segment = cfg.enterpriseTiers.includes(tierVal) || (cfg.enterpriseArrThreshold > 0 && (s.company.arr || 0) >= cfg.enterpriseArrThreshold) ? 'enterprise'\n    : cfg.growthTiers.includes(tierVal) ? 'growth' : 'smb';\n  const prev = s.company.previousNps;\n  const prevCategory = prev === null ? null : prev <= cfg.detractorMax ? 'detractor' : prev <= cfg.passiveMax ? 'passive' : 'promoter';\n  const delta = prev === null ? null : s.score - prev;\n  const comment = String(s.comment || '');\n  const churnHits = CHURN.filter((k) => new RegExp(`(^|[^a-z])${k.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}([^a-z]|$)`, 'i').test(comment));\n  const renewalAt = Date.parse(s.company.renewalDate || '');\n  const renewalDays = Number.isFinite(renewalAt) ? Math.ceil((renewalAt - NOW) / (24 * H)) : null;\n  const signals = [];\n  if (category === 'detractor' && prevCategory && prevCategory !== 'detractor') signals.push(`sentiment drop: ${prev} → ${s.score}`);\n  if (category === 'detractor' && prevCategory === 'detractor') signals.push(`repeat detractor (previous ${prev})`);\n  if (renewalDays !== null && renewalDays >= 0 && renewalDays <= cfg.renewalWindowDays) signals.push(`renewal in ${renewalDays} days`);\n  if (churnHits.length) signals.push(`churn language: ${churnHits.slice(0, 3).join(', ')}`);\n\n  let tier = 'standard'; let action = 'none'; let why;\n  if (category === 'detractor') {\n    if (segment === 'enterprise') { tier = 'emergency'; why = 'Enterprise detractor'; }\n    else if (segment === 'growth') {\n      if (cfg.escalateGrowthOnChurnSignal && churnHits.length) { tier = 'emergency'; why = 'Growth detractor with churn language'; }\n      else { tier = 'high'; why = 'Growth detractor'; }\n    } else if (cfg.smbDetractorAction === 'alert') { tier = 'high'; why = 'SMB detractor (SMB_DETRACTOR_ACTION=alert)'; }\n    else { tier = 'standard'; why = 'SMB detractor'; action = cfg.smbDetractorAction === 'task' ? 'task' : 'none'; }\n  } else if (category === 'passive') { why = 'Passive'; action = cfg.passiveFollowUp ? 'task' : 'none'; }\n  else { why = 'Promoter'; }\n  if (tier === 'emergency') action = 'huddle_task_ticket';\n  if (tier === 'high') action = 'alert_task';\n  return { ...base, evaluated: true, nps_category: category, segment, response_tier: tier, action, reason: why, signals, sentiment_delta: delta, previous_nps: prev,\n    renewal_in_days: renewalDays, churn_signals: churnHits, should_act: action !== 'none',\n    comment_preview: cfg.includeComment ? (redact(comment).length > cfg.commentChars ? `${redact(comment).slice(0, cfg.commentChars - 1)}…` : redact(comment)) : null };\n});\nconst counts = { submissions: results.length, evaluated: results.filter((r) => r.evaluated).length, skipped: results.filter((r) => !r.evaluated).length,\n  detractors: results.filter((r) => r.nps_category === 'detractor').length, passives: results.filter((r) => r.nps_category === 'passive').length, promoters: results.filter((r) => r.nps_category === 'promoter').length,\n  emergency: results.filter((r) => r.response_tier === 'emergency').length, high: results.filter((r) => r.response_tier === 'high').length };\nreturn [{ json: { source, readErrors, evaluatedAt: new Date(NOW).toISOString(), counts, results } }];\n"
+      },
+      "id": "4612cbdf-862b-5fdb-9766-fb99b0dc427a",
+      "name": "Detractor & Enterprise Urgency Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2920,
+        80
+      ],
+      "notes": "Filters, NPS category, segment, signals, response tier.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Plan Response Actions\n// Groups submissions by company (two detractors at one account = one huddle),\n// applies the per-company cooldown (company LAST_ALERT_PROPERTY + workflow\n// memory; a higher tier breaks through) and builds the HubSpot payloads:\n//   tasks    one HIGH-priority task per acting company, owner = CSM/AE\n//   tickets  one emergency ticket per emergency company (optional)\n//   company  retention_status, last_nps_score/category/submission, alert stamp\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst a = $input.first().json;\nconst RANK = { standard: 0, high: 1, emergency: 2 };\nconst H = 3600000; const now = Date.now();\nlet store = null; try { store = $getWorkflowStaticData('global'); } catch (e) { store = null; }\nconst mem = (store && store.npsCompanyAlerts) || {};\nconst groups = new Map();\nfor (const r of a.results.filter((x) => x.evaluated)) { const k = r.company.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }\nconst routeOf = (company) => {\n  const R = cfg.emergencyRouting || {};\n  const owner = company.ownerId && R.owners && R.owners[String(company.ownerId)];\n  return { owner: owner || null, tier: (R.tiers && R.tiers[String(company.tier)]) || null, leadership: R.leadership || null, default: R.default || { name: 'Customer Success' } };\n};\nconst plans = []; const suppressed = [];\nfor (const [companyId, rs] of groups) {\n  const company = rs[0].company;\n  const worst = rs.reduce((w, r) => (RANK[r.response_tier] > RANK[w.response_tier] ? r : w), rs[0]);\n  const latest = rs.slice().sort((x, y) => String(y.submittedAt).localeCompare(String(x.submittedAt)))[0];\n  const acting = rs.filter((r) => r.should_act);\n  const tier = worst.response_tier;\n  const lastAt = Math.max(Date.parse(company.lastAlertAt || '') || 0, mem[companyId]?.at || 0);\n  const lastTier = (mem[companyId]?.at || 0) >= (Date.parse(company.lastAlertAt || '') || 0) ? mem[companyId]?.tier : company.lastAlertTier;\n  let cooldown = null;\n  if (acting.length && lastAt && now - lastAt < cfg.cooldownHours * H && !(RANK[tier] > (RANK[lastTier] ?? RANK.emergency))) {\n    cooldown = `company alerted ${Math.round((now - lastAt) / 60000)} min ago (${lastTier || 'unknown tier'})`;\n    suppressed.push({ companyId, company: company.name, tier, submissions: acting.map((r) => r.submissionId), reason: `cooldown: ${cooldown}` });\n  }\n  plans.push({ companyId, company, tier, latest, submissions: rs, acting: cooldown ? [] : acting, cooldown, route: routeOf(company),\n    alert: !cooldown && ['emergency', 'high'].includes(tier), task: !cooldown && acting.length > 0 && cfg.createTasks, ticket: !cooldown && tier === 'emergency' && cfg.createTickets });\n}\nplans.sort((x, y) => RANK[y.tier] - RANK[x.tier] || (y.company.arr || 0) - (x.company.arr || 0));\n\nconst dueIn = { emergency: cfg.taskDueHoursEmergency, high: cfg.taskDueHoursHigh, standard: cfg.taskDueHoursStandard };\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst body = (p) => `<p><strong>NPS ${p.tier === 'emergency' ? 'EMERGENCY' : 'follow-up'}: ${esc(p.company.name)}</strong> (${esc(p.company.tier || 'no tier')})</p><ul>${p.acting.map((r) => `<li>Score <strong>${r.score}</strong> (${r.nps_category}) from ${esc(r.contact?.name || 'a contact')}${r.contact?.jobTitle ? `, ${esc(r.contact.jobTitle)}` : ''}${r.signals.length ? ` · ${esc(r.signals.join(' · '))}` : ''}${r.comment_preview ? `<br/>“${esc(r.comment_preview)}”` : ''}</li>`).join('')}</ul><p>Next steps: contact the customer within ${dueIn[p.tier]}h, agree a recovery plan, log the outcome on this task. Created by n8n run ${esc(cfg.runId)}.</p>`;\nconst ownerOf = (p) => p.company.ownerId || cfg.defaultTaskOwnerId || null;\nconst taskInputs = plans.filter((p) => p.task).map((p) => ({\n  _companyId: p.companyId,\n  properties: { hs_task_subject: `${p.tier === 'emergency' ? '🚨 NPS emergency' : 'NPS follow-up'}: ${p.company.name} (score ${p.acting.map((r) => r.score).join(', ')})`.slice(0, 250), hs_task_body: body(p),\n    hs_task_status: 'NOT_STARTED', hs_task_priority: p.tier === 'standard' ? 'MEDIUM' : 'HIGH', hs_task_type: 'CALL', hs_timestamp: new Date(now + dueIn[p.tier] * H).toISOString(), ...(ownerOf(p) ? { hubspot_owner_id: String(ownerOf(p)) } : {}) },\n  associations: [{ to: { id: p.companyId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 192 }] },\n    ...[...new Set(p.acting.map((r) => r.contact?.id).filter(Boolean))].map((id) => ({ to: { id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 204 }] }))],\n}));\nconst ticketInputs = plans.filter((p) => p.ticket).map((p) => ({\n  _companyId: p.companyId,\n  properties: { subject: `NPS emergency: ${p.company.name}`.slice(0, 250), content: body(p).replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 5000),\n    hs_pipeline: cfg.ticketPipelineId, hs_pipeline_stage: cfg.ticketStageId, hs_ticket_priority: 'HIGH', ...(ownerOf(p) ? { hubspot_owner_id: String(ownerOf(p)) } : {}) },\n  associations: [{ to: { id: p.companyId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 26 }] },\n    ...[...new Set(p.acting.map((r) => r.contact?.id).filter(Boolean))].map((id) => ({ to: { id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }] }))],\n}));\nconst companyUpdates = plans.map((p) => {\n  const props = {};\n  if (cfg.lastNpsScoreProperty) props[cfg.lastNpsScoreProperty] = String(p.latest.score);\n  if (cfg.lastNpsCategoryProperty) props[cfg.lastNpsCategoryProperty] = p.latest.nps_category;\n  if (cfg.lastNpsSubmissionProperty) props[cfg.lastNpsSubmissionProperty] = p.latest.submissionId;\n  if (cfg.retentionStatusProperty && p.submissions.some((r) => r.nps_category === 'detractor') && ['emergency', 'high'].includes(p.tier)) props[cfg.retentionStatusProperty] = cfg.retentionAtRiskValue;\n  if (p.alert || p.task) { if (cfg.lastAlertProperty) props[cfg.lastAlertProperty] = new Date(now).toISOString(); if (cfg.lastAlertTierProperty) props[cfg.lastAlertTierProperty] = p.tier; }\n  return { id: p.companyId, properties: props };\n}).filter((u) => Object.keys(u.properties).length && cfg.updateCompanyProperties);\nconst strip = (xs) => xs.map(({ _companyId, ...rest }) => rest);\nreturn [{ json: { ...a, plans, suppressed,\n  taskBody: { inputs: strip(taskInputs) }, taskCompanies: taskInputs.map((t) => t._companyId),\n  ticketBody: { inputs: strip(ticketInputs) }, ticketCompanies: ticketInputs.map((t) => t._companyId),\n  companyBody: { inputs: companyUpdates },\n  writeAllowed: cfg.writeToHubspot && (taskInputs.length + ticketInputs.length + companyUpdates.length) > 0 } }];\n"
+      },
+      "id": "c2c65f7b-8317-5683-9724-ff576638b2f6",
+      "name": "Plan Response Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3140,
+        80
+      ],
+      "notes": "Group by company, cooldown, task / ticket / company payloads.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "38a66b4c-d930-5ce5-a480-edaae91a9c64",
+              "leftValue": "={{ $json.writeAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7ce592e4-350a-5a65-b438-34788a58a322",
+      "name": "Write Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "2f726329-5f79-59f4-9a82-7bb0d9b275f1",
+              "leftValue": "={{ $('Plan Response Actions').first().json.taskBody.inputs.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "da2ea607-65f5-5897-8586-9544aac638b7",
+      "name": "Tasks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3580,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/tasks/batch/create",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Plan Response Actions').first().json.taskBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "6307105d-40cf-5e60-b946-6808ace2afbd",
+      "name": "HubSpot: Create Retention Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3800,
+        -100
+      ],
+      "retryOnFail": true,
+      "maxTries": 1,
+      "waitBetweenTries": 3000,
+      "notes": "HIGH priority, owner = CSM/AE, associated with company + contact. Scope: crm.objects.tasks.write (Tasks API).",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "38583b41-2756-56fe-b02c-8e446362d4c7",
+              "leftValue": "={{ $('Plan Response Actions').first().json.ticketBody.inputs.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "33bec037-3c9f-5d04-81f0-e5e41663c445",
+      "name": "Tickets?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/tickets/batch/create",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Plan Response Actions').first().json.ticketBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2578d873-045a-564b-ae62-a5519ee08a36",
+      "name": "HubSpot: Create Emergency Tickets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4240,
+        -100
+      ],
+      "retryOnFail": true,
+      "maxTries": 1,
+      "waitBetweenTries": 3000,
+      "notes": "Emergency companies only. Scope: crm.objects.tickets.write.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "378951e3-2fe7-5f4b-beae-9bf5c0f3b2cd",
+              "leftValue": "={{ $('Plan Response Actions').first().json.companyBody.inputs.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1fbba89a-b5b6-5882-b2ed-c7632724d322",
+      "name": "Company Updates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4460,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/objects/companies/batch/update",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Plan Response Actions').first().json.companyBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d299855d-4eed-50ed-b077-acf1bce94bf6",
+      "name": "HubSpot: Update Company Properties",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4680,
+        -100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "retention_status, last_nps_*. Scope: crm.objects.companies.write.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Collect CRM Results\n// Maps created task / ticket IDs back to companies (HubSpot returns batch\n// create results in input order) so the Slack alert can link to them, and\n// records the company alert time in workflow memory (production executions).\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst plan = $('Plan Response Actions').first().json;\nconst get = (n) => { try { return $(n).isExecuted ? $(n).first().json : null; } catch (e) { return null; } };\nconst t = get('HubSpot: Create Retention Tasks'); const k = get('HubSpot: Create Emergency Tickets'); const c = get('HubSpot: Update Company Properties');\nconst ids = (resp, companies) => {\n  const out = {};\n  if (resp && !resp.error && Array.isArray(resp.results)) resp.results.forEach((r, i) => { if (companies[i]) out[companies[i]] = String(r.id); });\n  return out;\n};\nconst res = {\n  tasks: { attempted: plan.taskCompanies.length, ok: t ? !t.error : null, error: t?.error ? String(t.error.message || t.error).slice(0, 200) : null, byCompany: ids(t, plan.taskCompanies) },\n  tickets: { attempted: plan.ticketCompanies.length, ok: k ? !k.error : null, error: k?.error ? String(k.error.message || k.error).slice(0, 200) : null, byCompany: ids(k, plan.ticketCompanies) },\n  companies: { attempted: plan.companyBody.inputs.length, ok: c ? !c.error : null, error: c?.error ? String(c.error.message || c.error).slice(0, 200) : null, updated: Array.isArray(c?.results) ? c.results.length : 0 },\n};\nlet store = null; try { store = $getWorkflowStaticData('global'); } catch (e) { store = null; }\nif (store && cfg.executionMode === 'production') {\n  store.npsCompanyAlerts = store.npsCompanyAlerts || {}; store.npsSeen = store.npsSeen || {};\n  for (const p of plan.plans.filter((x) => x.task && res.tasks.byCompany[x.companyId])) store.npsCompanyAlerts[p.companyId] = { at: Date.now(), tier: p.tier };\n  for (const r of plan.results.filter((x) => x.evaluated)) store.npsSeen[r.submissionId] = Date.now();\n}\nreturn [{ json: res }];\n"
+      },
+      "id": "ad05d829-0c82-5ff1-a298-919cba66cc15",
+      "name": "Collect CRM Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4900,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Slack Emergency Alerts\n// One Block Kit message per alerting company (emergency → emergency channel,\n// high → alerts channel, falling back to the emergency channel):\n//   header, @here (emergency, MENTION_HERE_ON_EMERGENCY), CSM / tier lead /\n//   leadership mentions from EMERGENCY_ROUTING, account facts, each detractor\n//   with score, signals and redacted comment, huddle instructions with the\n//   meeting link (HUDDLE_MEETING_URL_TEMPLATE) and buttons to the company,\n//   contact, retention task and ticket in HubSpot.\n// Incoming webhooks cannot start a Slack huddle; the message tells responders\n// to start one in the channel and links the fallback meeting room.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst plan = $('Plan Response Actions').first().json;\nlet crm = null; try { crm = $('Collect CRM Results').isExecuted ? $('Collect CRM Results').first().json : null; } catch (e) { crm = null; }\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst rec = (type, id) => (cfg.portalId && id ? `https://app.hubspot.com/contacts/${cfg.portalId}/record/${type}/${id}` : null);\nconst mention = (x) => (x ? (x.slack ? `<@${esc(x.slack)}>` : esc(x.name)) : null);\nconst money = (n) => (n ? `${cfg.currencySymbol}${Math.round(n).toLocaleString('en-US')}` : '—');\nconst messages = [];\nfor (const p of plan.plans.filter((x) => x.alert)) {\n  const em = p.tier === 'emergency';\n  const people = [mention(p.route.owner), mention(p.route.tier), em ? mention(p.route.leadership) : null].filter(Boolean);\n  if (!people.length) people.push(mention(p.route.default));\n  const meet = cfg.huddleUrlTemplate ? cfg.huddleUrlTemplate.replace('{companyId}', encodeURIComponent(p.companyId)).replace('{companyName}', encodeURIComponent(p.company.name || '')) : null;\n  const taskId = crm?.tasks?.byCompany?.[p.companyId]; const ticketId = crm?.tickets?.byCompany?.[p.companyId];\n  const firstContact = p.acting.find((r) => r.contact?.id)?.contact;\n  const buttons = [\n    rec('0-2', p.companyId) && { type: 'button', text: { type: 'plain_text', text: 'Open company' }, url: rec('0-2', p.companyId), ...(em ? { style: 'danger' } : {}) },\n    firstContact && rec('0-1', firstContact.id) && { type: 'button', text: { type: 'plain_text', text: 'Open contact' }, url: rec('0-1', firstContact.id) },\n    taskId && rec('0-27', taskId) && { type: 'button', text: { type: 'plain_text', text: 'Retention task' }, url: rec('0-27', taskId) },\n    ticketId && rec('0-5', ticketId) && { type: 'button', text: { type: 'plain_text', text: 'Emergency ticket' }, url: rec('0-5', ticketId) },\n    meet && { type: 'button', text: { type: 'plain_text', text: 'Join huddle room' }, url: meet, style: 'primary' },\n  ].filter(Boolean);\n  const blocks = [\n    { type: 'header', text: { type: 'plain_text', text: `${em ? '🚨 NPS EMERGENCY' : '⚠️ NPS detractor'}: ${p.company.name || 'Unknown account'}`.slice(0, 150), emoji: true } },\n    { type: 'section', text: { type: 'mrkdwn', text: `${em && cfg.mentionHereOnEmergency ? '<!here> ' : ''}${people.join(' ')} · ${p.acting.length} detractor response${p.acting.length === 1 ? '' : 's'} from a *${esc(p.company.tier || 'unknown')}* account.` } },\n    { type: 'section', fields: [\n      { type: 'mrkdwn', text: `*Tier*\\n${esc(p.company.tier || '—')}` }, { type: 'mrkdwn', text: `*Contract value*\\n${money(p.company.arr)}` },\n      { type: 'mrkdwn', text: `*Renewal*\\n${esc(p.company.renewalDate || '—')}` }, { type: 'mrkdwn', text: `*Previous NPS*\\n${p.company.previousNps ?? '—'}` },\n    ] },\n    ...p.acting.slice(0, 5).map((r) => ({ type: 'section', text: { type: 'mrkdwn', text: `*Score ${r.score}/10* · ${esc(r.surveyName || 'NPS')}${cfg.showContactName && r.contact?.name ? ` · ${esc(r.contact.name)}${r.contact.jobTitle ? `, ${esc(r.contact.jobTitle)}` : ''}` : r.contact?.jobTitle ? ` · ${esc(r.contact.jobTitle)}` : ''}${r.signals.length ? `\\n${r.signals.map((x) => `• ${esc(x)}`).join('\\n')}` : ''}${r.comment_preview ? `\\n>${esc(r.comment_preview)}` : ''}`.slice(0, 2900) } })),\n  ];\n  if (em) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Huddle now:* click *Huddle* in this channel's header${meet ? ', or join the room below' : ''}. Agree an owner, call the customer within ${cfg.taskDueHoursEmergency}h, and log the plan on the retention task.` } });\n  if (buttons.length) blocks.push({ type: 'actions', elements: buttons.slice(0, 5) });\n  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `${taskId ? `task ${esc(taskId)} · ` : cfg.writeToHubspot ? '' : 'task not created (write-back off) · '}${ticketId ? `ticket ${esc(ticketId)} · ` : ''}submission ${esc(p.acting.map((r) => r.submissionId).join(', '))} · run ${esc(cfg.runId)}`.slice(0, 2900) }] });\n  messages.push({ channel: em ? 'emergency' : 'alerts', companyId: p.companyId, tier: p.tier, body: { text: `${em ? 'NPS EMERGENCY' : 'NPS detractor'}: ${p.company.name} (${p.acting.map((r) => r.score).join(', ')}/10)`, blocks } });\n}\nreturn [{ json: { messages, slackAllowed: cfg.sendSlackAlerts && messages.length > 0 } }];\n"
+      },
+      "id": "9398f839-eaa5-5af6-9e10-926602183da3",
+      "name": "Build Slack Emergency Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5120,
+        80
+      ],
+      "notes": "Block Kit emergency / high alerts with huddle prompt and record links.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "71727b82-14b3-535d-9af0-de2ae2837458",
+              "leftValue": "={{ $json.slackAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0f198e03-dc25-5614-adb9-d5f037989d06",
+      "name": "Slack Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5340,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per Slack message.\nreturn $('Build Slack Emergency Alerts').first().json.messages.map((m) => ({ json: m }));\n"
+      },
+      "id": "041288fa-1846-5f47-b8ae-6c1fc61b46e4",
+      "name": "Emit Slack Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5560,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.channel === 'emergency' ? $env.SLACK_CS_EMERGENCY_WEBHOOK_URL : ($env.SLACK_CS_ALERTS_WEBHOOK_URL || $env.SLACK_CS_EMERGENCY_WEBHOOK_URL) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1100
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "6ccb2217-9cb2-5f43-aba7-a52aedd23e58",
+      "name": "Slack: Post Emergency Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5780,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Emergency channel; high tier to SLACK_CS_ALERTS_WEBHOOK_URL if set.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Collect Slack Results\n// Joins Slack responses by index; records alerted companies in workflow\n// memory (production executions) for the cooldown.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst msgs = $('Emit Slack Messages').all(); const resp = $input.all();\nif (resp.length !== msgs.length) throw new Error(`Slack result mismatch: ${msgs.length} messages vs ${resp.length} responses.`);\nconst results = msgs.map((m, i) => ({ companyId: m.json.companyId, tier: m.json.tier, channel: m.json.channel, ok: !resp[i].json.error, error: resp[i].json.error ? String(resp[i].json.error.message || resp[i].json.error).slice(0, 200) : null }));\nlet store = null; try { store = $getWorkflowStaticData('global'); } catch (e) { store = null; }\nif (store && cfg.executionMode === 'production') { store.npsCompanyAlerts = store.npsCompanyAlerts || {}; for (const r of results.filter((x) => x.ok)) store.npsCompanyAlerts[r.companyId] = { at: Date.now(), tier: r.tier }; }\nreturn [{ json: { results, sent: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length } }];\n"
+      },
+      "id": "6025c9c8-05b2-5303-8212-4dd10cebcf75",
+      "name": "Collect Slack Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6000,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Run Summary\n// One JSON document for ALERT_WEBHOOK_URL (CS platform, BI, incident tooling):\n// counts and per-company responses. No comments or contact data.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst plan = $('Plan Response Actions').first().json;\nlet crm = null; try { crm = $('Collect CRM Results').isExecuted ? $('Collect CRM Results').first().json : null; } catch (e) { crm = null; }\nlet sl = null; try { sl = $('Collect Slack Results').isExecuted ? $('Collect Slack Results').first().json : null; } catch (e) { sl = null; }\nconst acting = plan.plans.filter((p) => p.alert || p.task);\nconst body = {\n  event: 'hubspot.nps_detractor.run', runId: cfg.runId, generatedAt: new Date().toISOString(),\n  mode: cfg.sandboxMode ? 'sandbox' : (cfg.sendSlackAlerts || cfg.writeToHubspot) ? 'live' : 'dry_run', counts: plan.counts,\n  responses: acting.map((p) => ({ company_id: p.companyId, company: p.company.name, tier: p.tier, segment: p.acting[0]?.segment || null, scores: p.acting.map((r) => r.score), signals: [...new Set(p.acting.flatMap((r) => r.signals))], task_id: crm?.tasks?.byCompany?.[p.companyId] || null, ticket_id: crm?.tickets?.byCompany?.[p.companyId] || null })),\n  suppressed: plan.suppressed, slack: sl ? { sent: sl.sent, failed: sl.failed } : null,\n};\nreturn [{ json: { body, sendAllowed: cfg.webhookEnabled && (acting.length > 0 || (sl && sl.failed > 0) || cfg.notifyOnEveryRun) } }];\n"
+      },
+      "id": "ce7cc1b2-29af-5785-90c9-70d426b36560",
+      "name": "Build Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6220,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "3ccf4168-62cc-5379-8d09-460e4c5b185b",
+              "leftValue": "={{ $json.sendAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f3dce1aa-6ff8-5538-8cf9-2887300e8283",
+      "name": "Summary Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        6440,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ALERT_WEBHOOK_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a3c1e54d-315f-5268-a16b-1e2f016d0356",
+      "name": "Webhook: Post Run Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6660,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Generic JSON webhook.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Execution Summary & Audit\n// Final record on every path: per-submission category, segment, tier and\n// skip reason; per-company actions; suppressions; CRM and Slack results.\n// Comments and contact details are excluded.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst one = (n) => { try { return $(n).isExecuted ? $(n).first().json : null; } catch (e) { return null; } };\nconst all = (n) => { try { return $(n).isExecuted ? $(n).all().map((i) => i.json) : []; } catch (e) { return []; } };\nconst wh = one('Parse & Verify Webhook'); const plan = one('Plan Response Actions'); const an = plan || one('Detractor & Enterprise Urgency Analysis');\nconst crm = one('Collect CRM Results'); const sl = one('Collect Slack Results'); const sum = all('Webhook: Post Run Summary');\nlet outcome = 'no_submissions';\nif (an) {\n  const alerting = plan ? plan.plans.filter((p) => p.alert || p.task).length : 0;\n  if (!an.counts.evaluated) outcome = 'no_submissions_to_evaluate';\n  else if (!alerting) outcome = plan && plan.suppressed.length ? 'responses_suppressed' : 'no_action_needed';\n  else if (cfg.sandboxMode) outcome = 'responses_found_sandbox';\n  else if (!cfg.sendSlackAlerts && !cfg.writeToHubspot) outcome = cfg.dryRun ? 'responses_found_dry_run' : 'responses_found_outputs_disabled';\n  else if ((sl && sl.failed) || (crm && [crm.tasks, crm.tickets, crm.companies].some((x) => x.ok === false))) outcome = 'responded_with_errors';\n  else outcome = 'responded';\n}\nconst status = (list) => (!list.length ? 'not_sent' : list.some((x) => x.error) ? 'failed' : 'sent');\nreturn [{ json: {\n  workflow: 'n8n-hubspot-nps-detractor-slack-huddle-provisioner',\n  runId: cfg.runId, executionMode: cfg.executionMode, finishedAt: new Date().toISOString(), outcome,\n  safety: { sandboxMode: cfg.sandboxMode, dryRun: cfg.dryRun, sendSlackAlerts: cfg.sendSlackAlerts, writeToHubspot: cfg.writeToHubspot },\n  thresholds: { detractorMax: cfg.detractorMax, passiveMax: cfg.passiveMax, enterpriseTiers: cfg.enterpriseTiers, growthTiers: cfg.growthTiers, enterpriseArrThreshold: cfg.enterpriseArrThreshold, cooldownHours: cfg.cooldownHours, maxSubmissionAgeHours: cfg.maxSubmissionAgeHours },\n  source: an ? an.source : (wh ? 'webhook' : null), webhook: wh ? { auth: wh.auth, received: wh.received, ids: wh.ids.length, inline: wh.inline.length, ignored: wh.ignored } : null,\n  readErrors: an ? an.readErrors : [], counts: an ? an.counts : null,\n  submissions: an ? an.results.map((r) => ({ submissionId: r.submissionId, companyId: r.company?.id || null, score: r.score, category: r.nps_category || null, segment: r.segment || null, tier: r.response_tier, action: r.action || null, skipReason: r.skipReason || null, signals: r.signals || [] })) : [],\n  companies: plan ? plan.plans.map((p) => ({ companyId: p.companyId, company: p.company.name, tier: p.tier, alert: p.alert, task: p.task, ticket: p.ticket, cooldown: p.cooldown })) : [],\n  suppressed: plan ? plan.suppressed : [],\n  hubspot: crm || { tasks: null, tickets: null, companies: null },\n  slack: sl ? sl.results : [],\n  runSummaryWebhook: status(sum),\n} }];\n"
+      },
+      "id": "a7e57c57-559e-5d21-b300-c7d69875320c",
+      "name": "Execution Summary & Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6880,
+        220
+      ],
+      "notes": "Final record on every path.",
+      "notesInFlow": false
+    }
+  ],
+  "connections": {
+    "NPS Submission Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config & Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NPS Polling Schedule": {
+      "main": [
+        [
+          {
+            "node": "Config & Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config & Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config & Safety Gate": {
+      "main": [
+        [
+          {
+            "node": "From Webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Parse & Verify Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sandbox Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Verify Webhook": {
+      "main": [
+        [
+          {
+            "node": "Sandbox Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sandbox Mode?": {
+      "main": [
+        [
+          {
+            "node": "Mock NPS Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Items?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock NPS Context": {
+      "main": [
+        [
+          {
+            "node": "Detractor & Enterprise Urgency Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Items?": {
+      "main": [
+        [
+          {
+            "node": "Build Submission Reads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot: Search NPS Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Search NPS Submissions": {
+      "main": [
+        [
+          {
+            "node": "Build Submission Reads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Submission Reads": {
+      "main": [
+        [
+          {
+            "node": "Has Submissions?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Submissions?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Batch Read Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execution Summary & Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Batch Read Submissions": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Submission → Contact Associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Submission → Contact Associations": {
+      "main": [
+        [
+          {
+            "node": "Build Contact Reads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Contact Reads": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Batch Read Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Batch Read Contacts": {
+      "main": [
+        [
+          {
+            "node": "Build Company Reads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Company Reads": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Batch Read Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Batch Read Companies": {
+      "main": [
+        [
+          {
+            "node": "Assemble NPS Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble NPS Context": {
+      "main": [
+        [
+          {
+            "node": "Detractor & Enterprise Urgency Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detractor & Enterprise Urgency Analysis": {
+      "main": [
+        [
+          {
+            "node": "Plan Response Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Response Actions": {
+      "main": [
+        [
+          {
+            "node": "Write Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Gate": {
+      "main": [
+        [
+          {
+            "node": "Tasks?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Slack Emergency Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tasks?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Create Retention Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tickets?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Create Retention Tasks": {
+      "main": [
+        [
+          {
+            "node": "Tickets?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tickets?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Create Emergency Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Company Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Create Emergency Tickets": {
+      "main": [
+        [
+          {
+            "node": "Company Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Updates?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Update Company Properties",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collect CRM Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Update Company Properties": {
+      "main": [
+        [
+          {
+            "node": "Collect CRM Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect CRM Results": {
+      "main": [
+        [
+          {
+            "node": "Build Slack Emergency Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Slack Emergency Alerts": {
+      "main": [
+        [
+          {
+            "node": "Slack Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Gate": {
+      "main": [
+        [
+          {
+            "node": "Emit Slack Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Slack Messages": {
+      "main": [
+        [
+          {
+            "node": "Slack: Post Emergency Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Post Emergency Alert": {
+      "main": [
+        [
+          {
+            "node": "Collect Slack Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Slack Results": {
+      "main": [
+        [
+          {
+            "node": "Build Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Summary Webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summary Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Webhook: Post Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execution Summary & Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Post Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Execution Summary & Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "NPS Submission Webhook": [
+      {
+        "json": {
+          "headers": {
+            "content-type": "application/json",
+            "authorization": "Bearer synthetic-token"
+          },
+          "params": {},
+          "query": {},
+          "body": [
+            {
+              "feedbackSubmissionId": "3300001"
+            },
+            {
+              "feedbackSubmissionId": "3300010"
+            },
+            {
+              "feedbackSubmissionId": "3300003"
+            },
+            {
+              "feedbackSubmissionId": "3300008"
+            }
+          ],
+          "webhookUrl": "https://n8n.example/webhook/hubspot/nps-submission",
+          "executionMode": "production"
+        }
+      }
+    ],
+    "HubSpot: Search NPS Submissions": [
+      {
+        "json": {
+          "total": 4,
+          "results": [
+            {
+              "id": "3300001",
+              "properties": {
+                "hs_value": "2",
+                "hs_survey_type": "NPS"
+              }
+            },
+            {
+              "id": "3300010",
+              "properties": {
+                "hs_value": "3",
+                "hs_survey_type": "NPS"
+              }
+            },
+            {
+              "id": "3300003",
+              "properties": {
+                "hs_value": "4",
+                "hs_survey_type": "NPS"
+              }
+            },
+            {
+              "id": "3300008",
+              "properties": {
+                "hs_value": "0",
+                "hs_survey_type": "NPS"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Batch Read Submissions": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "3300001",
+              "properties": {
+                "hs_object_id": "3300001",
+                "hs_survey_type": "NPS",
+                "hs_survey_name": "Quarterly NPS (synthetic)",
+                "hs_survey_id": "5550001",
+                "hs_value": "2",
+                "hs_response_text": "Honestly we are evaluating other vendors before our renewal. Too many outages this quarter and nobody proactive from your side.",
+                "hs_survey_channel": "EMAIL",
+                "hs_submission_timestamp": "2026-11-16T15:30:00.000Z"
+              }
+            },
+            {
+              "id": "3300010",
+              "properties": {
+                "hs_object_id": "3300010",
+                "hs_survey_type": "NPS",
+                "hs_survey_name": "Quarterly NPS (synthetic)",
+                "hs_survey_id": "5550001",
+                "hs_value": "3",
+                "hs_response_text": "Second ticket this month about delayed shipments sync.",
+                "hs_survey_channel": "EMAIL",
+                "hs_submission_timestamp": "2026-11-16T15:18:00.000Z"
+              }
+            },
+            {
+              "id": "3300003",
+              "properties": {
+                "hs_object_id": "3300003",
+                "hs_survey_type": "NPS",
+                "hs_survey_name": "Quarterly NPS (synthetic)",
+                "hs_survey_id": "5550001",
+                "hs_value": "4",
+                "hs_response_text": "Reporting is still missing the export we were promised.",
+                "hs_survey_channel": "EMAIL",
+                "hs_submission_timestamp": "2026-11-16T14:30:00.000Z"
+              }
+            },
+            {
+              "id": "3300008",
+              "properties": {
+                "hs_object_id": "3300008",
+                "hs_survey_type": "NPS",
+                "hs_survey_name": "Quarterly NPS (synthetic)",
+                "hs_survey_id": "5550001",
+                "hs_value": "0",
+                "hs_response_text": "Testing the survey link before the customer send.",
+                "hs_survey_channel": "EMAIL",
+                "hs_submission_timestamp": "2026-11-16T15:00:00.000Z"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Submission → Contact Associations": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "from": {
+                "id": "3300001"
+              },
+              "to": [
+                {
+                  "toObjectId": 9100101,
+                  "associationTypes": [
+                    {
+                      "category": "HUBSPOT_DEFINED",
+                      "typeId": 97,
+                      "label": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "from": {
+                "id": "3300010"
+              },
+              "to": [
+                {
+                  "toObjectId": 9100112,
+                  "associationTypes": [
+                    {
+                      "category": "HUBSPOT_DEFINED",
+                      "typeId": 97,
+                      "label": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "from": {
+                "id": "3300003"
+              },
+              "to": [
+                {
+                  "toObjectId": 9100103,
+                  "associationTypes": [
+                    {
+                      "category": "HUBSPOT_DEFINED",
+                      "typeId": 97,
+                      "label": null
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "from": {
+                "id": "3300008"
+              },
+              "to": [
+                {
+                  "toObjectId": 9100108,
+                  "associationTypes": [
+                    {
+                      "category": "HUBSPOT_DEFINED",
+                      "typeId": 97,
+                      "label": null
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Batch Read Contacts": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "9100101",
+              "properties": {
+                "firstname": "Sarah",
+                "lastname": "Jenkins",
+                "email": "sarah.jenkins@example.com",
+                "jobtitle": "VP Operations",
+                "associatedcompanyid": "7000101"
+              }
+            },
+            {
+              "id": "9100103",
+              "properties": {
+                "firstname": "Priya",
+                "lastname": "Nair",
+                "email": "priya.nair@example.com",
+                "jobtitle": "Operations Manager",
+                "associatedcompanyid": "7000103"
+              }
+            },
+            {
+              "id": "9100108",
+              "properties": {
+                "firstname": "Internal",
+                "lastname": "Reviewer",
+                "email": "cs.reviewer@company.example",
+                "jobtitle": "CS Ops",
+                "associatedcompanyid": "7000101"
+              }
+            },
+            {
+              "id": "9100112",
+              "properties": {
+                "firstname": "Marcus",
+                "lastname": "Reid",
+                "email": "marcus.reid@example.com",
+                "jobtitle": "IT Manager",
+                "associatedcompanyid": "7000101"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Batch Read Companies": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "7000101",
+              "properties": {
+                "name": "Apex Logistics",
+                "domain": "apexlogistics.example.com",
+                "customer_tier": "Enterprise",
+                "annual_contract_value": "480000",
+                "hubspot_owner_id": "87000001",
+                "last_nps_score": null,
+                "retention_status": "Healthy",
+                "last_nps_alert_at": null,
+                "renewal_date": "2027-01-15",
+                "last_nps_submission_id": null,
+                "last_nps_alert_tier": null
+              }
+            },
+            {
+              "id": "7000103",
+              "properties": {
+                "name": "Orchid Health",
+                "domain": "orchidhealth.example.com",
+                "customer_tier": "Growth",
+                "annual_contract_value": "64000",
+                "hubspot_owner_id": "87000003",
+                "last_nps_score": "8",
+                "retention_status": "Healthy",
+                "last_nps_alert_at": null,
+                "renewal_date": "2027-06-04",
+                "last_nps_submission_id": null,
+                "last_nps_alert_tier": null
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Create Retention Tasks": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "61000000101",
+              "properties": {
+                "hs_task_status": "NOT_STARTED"
+              }
+            },
+            {
+              "id": "61000000102",
+              "properties": {
+                "hs_task_status": "NOT_STARTED"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Create Emergency Tickets": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "81000000101",
+              "properties": {
+                "hs_ticket_priority": "HIGH"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Update Company Properties": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "7000101",
+              "properties": {}
+            },
+            {
+              "id": "7000103",
+              "properties": {}
+            }
+          ]
+        }
+      }
+    ],
+    "Slack: Post Emergency Alert": [
+      {
+        "json": {
+          "data": "ok"
+        }
+      },
+      {
+        "json": {
+          "data": "ok"
+        }
+      }
+    ],
+    "Webhook: Post Run Summary": [
+      {
+        "json": {
+          "received": true
+        }
+      }
+    ]
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 900
+  },
+  "versionId": "cfae6dd7-a558-5282-8463-9df4c5c2a033",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
