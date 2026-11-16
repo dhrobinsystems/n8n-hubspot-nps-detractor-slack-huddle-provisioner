@@ -63,6 +63,8 @@ I built this workflow to treat it as an incident. When an NPS response arrives i
 
 ## 2. Architecture and Data Flow
 
+![HubSpot NPS Detractor Slack Huddle Provisioner Workflow Overview](workflow-overview.png)
+
 ```mermaid
 flowchart LR
     WH[NPS Submission Webhook<br/>HubSpot workflow 'Send a webhook'] --> CFG
