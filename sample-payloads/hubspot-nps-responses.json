@@ -1,0 +1,528 @@
+{
+  "_comment": "Synthetic fixture: feedback submissions (CRM search shape) plus the contacts and companies they resolve to. All people, companies, emails and IDs are fictitious. _relative offsets are resolved against the current time by the sandbox node; _scenario documents the expected result (README \u00a75).",
+  "results": [
+    {
+      "id": "3300001",
+      "contactId": "9100101",
+      "properties": {
+        "hs_object_id": "3300001",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "2",
+        "hs_response_text": "Honestly we are evaluating other vendors before our renewal. Too many outages this quarter and nobody proactive from your side.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 0.5
+      },
+      "_scenario": "emergency: Enterprise detractor, churn language, renewal in 60 days"
+    },
+    {
+      "id": "3300002",
+      "contactId": "9100102",
+      "properties": {
+        "hs_object_id": "3300002",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "5",
+        "hs_response_text": "Support has been slow lately and the last release broke our SSO.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1
+      },
+      "_scenario": "emergency: Enterprise detractor, previous NPS 9 (sentiment drop)"
+    },
+    {
+      "id": "3300003",
+      "contactId": "9100103",
+      "properties": {
+        "hs_object_id": "3300003",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "4",
+        "hs_response_text": "Reporting is still missing the export we were promised.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1.5
+      },
+      "_scenario": "high: Growth detractor, previous 8"
+    },
+    {
+      "id": "3300004",
+      "contactId": "9100104",
+      "properties": {
+        "hs_object_id": "3300004",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "6",
+        "hs_response_text": "Thinking of switching to a competitor if the API limits don't improve.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 2
+      },
+      "_scenario": "high: Growth detractor with churn signal"
+    },
+    {
+      "id": "3300005",
+      "contactId": "9100105",
+      "properties": {
+        "hs_object_id": "3300005",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "3",
+        "hs_response_text": "Too expensive for what we use.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 2
+      },
+      "_scenario": "standard: SMB detractor \u2192 follow-up task only"
+    },
+    {
+      "id": "3300006",
+      "contactId": "9100106",
+      "properties": {
+        "hs_object_id": "3300006",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "7",
+        "hs_response_text": "Works fine, onboarding could be smoother.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 3
+      },
+      "_scenario": "standard: passive"
+    },
+    {
+      "id": "3300007",
+      "contactId": "9100107",
+      "properties": {
+        "hs_object_id": "3300007",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "10",
+        "hs_response_text": "Fantastic team, the new dashboards saved us hours.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 3
+      },
+      "_scenario": "standard: promoter"
+    },
+    {
+      "id": "3300008",
+      "contactId": "9100108",
+      "properties": {
+        "hs_object_id": "3300008",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "0",
+        "hs_response_text": "Testing the survey link before the customer send.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1
+      },
+      "_scenario": "filtered: internal submission"
+    },
+    {
+      "id": "3300009",
+      "contactId": "9100109",
+      "properties": {
+        "hs_object_id": "3300009",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "1",
+        "hs_response_text": "qa run",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1
+      },
+      "_scenario": "filtered: test account"
+    },
+    {
+      "id": "3300010",
+      "contactId": "9100112",
+      "properties": {
+        "hs_object_id": "3300010",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "3",
+        "hs_response_text": "Second ticket this month about delayed shipments sync.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 0.7
+      },
+      "_scenario": "emergency: same company as 3300001 \u2192 grouped into one alert"
+    },
+    {
+      "id": "3300011",
+      "contactId": "9100110",
+      "properties": {
+        "hs_object_id": "3300011",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "4",
+        "hs_response_text": "Billing errors again.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 120
+      },
+      "_scenario": "filtered: older than MAX_SUBMISSION_AGE_HOURS"
+    },
+    {
+      "id": "3300012",
+      "contactId": "9100106",
+      "properties": {
+        "hs_object_id": "3300012",
+        "hs_survey_type": "CSAT",
+        "hs_survey_name": "Support CSAT (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "2",
+        "hs_response_text": "The chat agent was unhelpful.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1
+      },
+      "_scenario": "filtered: not an NPS survey"
+    },
+    {
+      "id": "3300013",
+      "contactId": "9100111",
+      "properties": {
+        "hs_object_id": "3300013",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "6",
+        "hs_response_text": "Integration issues keep coming back.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1
+      },
+      "_scenario": "emergency: Enterprise detractor, but company alerted 6h ago \u2192 Slack suppressed, no duplicate task"
+    },
+    {
+      "id": "3300003",
+      "contactId": "9100103",
+      "properties": {
+        "hs_object_id": "3300003",
+        "hs_survey_type": "NPS",
+        "hs_survey_name": "Quarterly NPS (synthetic)",
+        "hs_survey_id": "5550001",
+        "hs_value": "4",
+        "hs_response_text": "Reporting is still missing the export we were promised.",
+        "hs_survey_channel": "EMAIL"
+      },
+      "_relative": {
+        "submittedHoursAgo": 1.5
+      },
+      "_scenario": "filtered: duplicate delivery of 3300003"
+    }
+  ],
+  "contacts": {
+    "9100101": {
+      "id": "9100101",
+      "properties": {
+        "firstname": "Sarah",
+        "lastname": "Jenkins",
+        "email": "sarah.jenkins@example.com",
+        "jobtitle": "VP Operations",
+        "associatedcompanyid": "7000101"
+      }
+    },
+    "9100102": {
+      "id": "9100102",
+      "properties": {
+        "firstname": "Marcus",
+        "lastname": "Vance",
+        "email": "marcus.vance@example.com",
+        "jobtitle": "Head of IT",
+        "associatedcompanyid": "7000102"
+      }
+    },
+    "9100103": {
+      "id": "9100103",
+      "properties": {
+        "firstname": "Priya",
+        "lastname": "Nair",
+        "email": "priya.nair@example.com",
+        "jobtitle": "Operations Manager",
+        "associatedcompanyid": "7000103"
+      }
+    },
+    "9100104": {
+      "id": "9100104",
+      "properties": {
+        "firstname": "Diego",
+        "lastname": "Alvarez",
+        "email": "diego.alvarez@example.com",
+        "jobtitle": "Director of eCommerce",
+        "associatedcompanyid": "7000104"
+      }
+    },
+    "9100105": {
+      "id": "9100105",
+      "properties": {
+        "firstname": "Hannah",
+        "lastname": "Cole",
+        "email": "hannah.cole@example.com",
+        "jobtitle": "Founder",
+        "associatedcompanyid": "7000105"
+      }
+    },
+    "9100106": {
+      "id": "9100106",
+      "properties": {
+        "firstname": "Tom",
+        "lastname": "Becker",
+        "email": "tom.becker@example.com",
+        "jobtitle": "CTO",
+        "associatedcompanyid": "7000106"
+      }
+    },
+    "9100107": {
+      "id": "9100107",
+      "properties": {
+        "firstname": "Lena",
+        "lastname": "Vogel",
+        "email": "lena.vogel@example.com",
+        "jobtitle": "Finance Director",
+        "associatedcompanyid": "7000107"
+      }
+    },
+    "9100108": {
+      "id": "9100108",
+      "properties": {
+        "firstname": "Internal",
+        "lastname": "Reviewer",
+        "email": "cs.reviewer@company.example",
+        "jobtitle": "CS Ops",
+        "associatedcompanyid": "7000101"
+      }
+    },
+    "9100109": {
+      "id": "9100109",
+      "properties": {
+        "firstname": "Test",
+        "lastname": "User",
+        "email": "test.user@example.com",
+        "jobtitle": "QA",
+        "associatedcompanyid": "7000108"
+      }
+    },
+    "9100110": {
+      "id": "9100110",
+      "properties": {
+        "firstname": "Jordan",
+        "lastname": "Lee",
+        "email": "jordan.lee@example.com",
+        "jobtitle": "Logistics Lead",
+        "associatedcompanyid": "7000109"
+      }
+    },
+    "9100111": {
+      "id": "9100111",
+      "properties": {
+        "firstname": "Camille",
+        "lastname": "Durand",
+        "email": "camille.durand@example.com",
+        "jobtitle": "COO",
+        "associatedcompanyid": "7000110"
+      }
+    },
+    "9100112": {
+      "id": "9100112",
+      "properties": {
+        "firstname": "Marcus",
+        "lastname": "Reid",
+        "email": "marcus.reid@example.com",
+        "jobtitle": "IT Manager",
+        "associatedcompanyid": "7000101"
+      }
+    }
+  },
+  "companies": {
+    "7000101": {
+      "id": "7000101",
+      "properties": {
+        "name": "Apex Logistics",
+        "domain": "apexlogistics.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "480000",
+        "hubspot_owner_id": "87000001",
+        "last_nps_score": null,
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 60
+      }
+    },
+    "7000102": {
+      "id": "7000102",
+      "properties": {
+        "name": "Vanguard Cloud",
+        "domain": "vanguardcloud.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "310000",
+        "hubspot_owner_id": "87000002",
+        "last_nps_score": "9",
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 150
+      }
+    },
+    "7000103": {
+      "id": "7000103",
+      "properties": {
+        "name": "Orchid Health",
+        "domain": "orchidhealth.example.com",
+        "customer_tier": "Growth",
+        "annual_contract_value": "64000",
+        "hubspot_owner_id": "87000003",
+        "last_nps_score": "8",
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 200
+      }
+    },
+    "7000104": {
+      "id": "7000104",
+      "properties": {
+        "name": "Summit Retail",
+        "domain": "summitretail.example.com",
+        "customer_tier": "Growth",
+        "annual_contract_value": "52000",
+        "hubspot_owner_id": "87000003",
+        "last_nps_score": null,
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 45
+      }
+    },
+    "7000105": {
+      "id": "7000105",
+      "properties": {
+        "name": "Brightwater Labs",
+        "domain": "brightwater.example.com",
+        "customer_tier": "SMB",
+        "annual_contract_value": "9000",
+        "hubspot_owner_id": "87000004",
+        "last_nps_score": null,
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 300
+      }
+    },
+    "7000106": {
+      "id": "7000106",
+      "properties": {
+        "name": "Northwind Media",
+        "domain": "northwindmedia.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "220000",
+        "hubspot_owner_id": "87000002",
+        "last_nps_score": "6",
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 120
+      }
+    },
+    "7000107": {
+      "id": "7000107",
+      "properties": {
+        "name": "Kestrel Fintech",
+        "domain": "kestrelfintech.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "390000",
+        "hubspot_owner_id": "87000001",
+        "last_nps_score": "9",
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 240
+      }
+    },
+    "7000108": {
+      "id": "7000108",
+      "properties": {
+        "name": "QA Test Account",
+        "domain": "qa-test.example.com",
+        "customer_tier": "Internal",
+        "annual_contract_value": "0",
+        "hubspot_owner_id": "87000004",
+        "last_nps_score": null,
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": null
+      }
+    },
+    "7000109": {
+      "id": "7000109",
+      "properties": {
+        "name": "Harbor Freightways",
+        "domain": "harborfreightways.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "275000",
+        "hubspot_owner_id": "87000002",
+        "last_nps_score": null,
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 90
+      }
+    },
+    "7000110": {
+      "id": "7000110",
+      "properties": {
+        "name": "Lumiere Optique",
+        "domain": "lumiereoptique.example.com",
+        "customer_tier": "Enterprise",
+        "annual_contract_value": "205000",
+        "hubspot_owner_id": "87000001",
+        "last_nps_score": "4",
+        "retention_status": "Healthy",
+        "last_nps_alert_at": null
+      },
+      "_relative": {
+        "renewalInDays": 75,
+        "lastAlertHoursAgo": 6
+      }
+    }
+  }
+}
